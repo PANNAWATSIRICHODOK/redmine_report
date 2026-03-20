@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Redmine CTO Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Mitr:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+
+<body>
+  <main class="page-shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <h1>Redmine Report</h1>
+        <p class="hero-desc">กรองข้อมูลแล้วดูรายการงานที่ต้องการได้ทันที</p>
+      </div>
+    </header>
+
+    <div class="content-grid">
+      <aside class="sidebar">
+        <form id="filters-form" class="filter-card">
+          <div class="filter-heading">
+            <h2>ตัวกรอง</h2>
+            <p>เลือกช่วงวันที่และรายการที่ต้องการดู</p>
+          </div>
+
+          <label class="field">
+            <span>ค้นหา</span>
+            <input id="search-input" type="search" placeholder="issue | owner | requester | note" />
+          </label>
+
+          <div class="date-row">
+            <label class="field">
+              <span>ตั้งแต่วันที่</span>
+              <input id="from-date" type="date" />
+            </label>
+            <label class="field">
+              <span>ถึงวันที่</span>
+              <input id="to-date" type="date" />
+            </label>
+          </div>
+
+          <label class="toggle-field" for="disable-date-filter">
+            <input id="disable-date-filter" type="checkbox" checked />
+            <span>ไม่กรองวันที่ และดึงข้อมูลทั้งหมดจาก Redmine</span>
+          </label>
+
+          <section class="multi-filter">
+            <section class="filter-group">
+              <div class="filter-group-head">
+                <span>ผู้รับผิดชอบ</span>
+                <button class="ghost-button" id="report-user-clear" type="button">ล้าง</button>
+              </div>
+              <div class="filter-options" id="report-user-filter"></div>
+            </section>
+            <section class="filter-group">
+              <div class="filter-group-head">
+                <span>แผนก</span>
+                <button class="ghost-button" type="button" data-filter-clear="departments">ล้าง</button>
+              </div>
+              <label class="field filter-search-field">
+                <input id="department-filter-search" type="search" placeholder="ค้นหาแผนก" />
+              </label>
+              <div class="filter-options" id="department-filter"></div>
+            </section>
+            <section class="filter-group">
+              <div class="filter-group-head">
+                <span>ผู้แจ้ง</span>
+                <button class="ghost-button" type="button" data-filter-clear="requesters">ล้าง</button>
+              </div>
+              <label class="field filter-search-field">
+                <input id="requester-filter-search" type="search" placeholder="ค้นหาผู้แจ้ง" />
+              </label>
+              <div class="filter-options" id="requester-filter"></div>
+            </section>
+          </section>
+
+          <p class="helper-text" id="report-user-note">ถ้าไม่กรองวันที่ จะแสดงงานทั้งหมดของผู้รับผิดชอบที่เลือก</p>
+
+          <div class="filter-actions">
+            <button class="primary-button" type="submit">อัปเดตรายงาน</button>
+            <p class="helper-text" id="status-line">ข้อมูลจะอัปเดตอัตโนมัติเมื่อเปลี่ยนผู้รับผิดชอบหรือช่วงวันที่</p>
+          </div>
+        </form>
+      </aside>
+
+      <section class="report-panel">
+        <div class="panel-heading">
+          <h2>รายการงาน</h2>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat-card">
+            <p>งานทั้งหมด</p>
+            <strong id="metric-issues">0</strong>
+            <span>หลังกรองแล้ว</span>
+          </div>
+          <div class="stat-card">
+            <p>ผู้แจ้ง</p>
+            <strong id="metric-requesters">0</strong>
+            <span>ผู้แจ้งที่อยู่ในผลลัพธ์</span>
+          </div>
+        </div>
+
+        <div class="report-toolbar">
+          <div class="toolbar-actions">
+            <label>
+              <span>Rows</span>
+              <select id="rows-per-page">
+                <option value="10">10</option>
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+            <button class="secondary-button" id="export-csv" type="button">Export CSV</button>
+            <div class="pagination-controls">
+              <button class="secondary-button" id="prev-page" type="button">ก่อนหน้า</button>
+              <span id="page-info" class="page-info">-</span>
+              <button class="secondary-button" id="next-page" type="button">ถัดไป</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="error-box" class="error-box hidden"></div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr class="table-header-row">
+                <th>No.</th>
+                <th>Issue</th>
+                <th>โปรเจกต์</th>
+                <th>ผู้รับผิดชอบ</th>
+                <th>ผู้แจ้ง / แผนก</th>
+                <th>สถานะ</th>
+              </tr>
+            </thead>
+            <tbody id="issues-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+
+</html>
