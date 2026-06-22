@@ -10,6 +10,7 @@ from redmine_github.views.cli_view import (
     print_dry_run,
     print_no_commits,
     print_skipped_existing,
+    print_skipped_time_entry,
 )
 
 
@@ -36,10 +37,10 @@ class ImportOptions:
 def estimate_hours(commit: Commit) -> float:
     text = f"{commit.subject} {commit.body}".casefold()
     if any(word in text for word in ["refactor", "migrate", "integration", "workflow"]):
-        return 2.5
+        return 4.0
     if any(word in text for word in ["fix", "bug", "report", "feature", "add"]):
-        return 1.0
-    return 0.5
+        return 2.5
+    return 2.0
 
 
 def score_commit(commit: Commit) -> int:
@@ -54,18 +55,30 @@ def score_commit(commit: Commit) -> int:
     return min(score, 50)
 
 
-def estimate_spent_hours(estimated_hours: float, ai_score: int) -> float:
-    raw_hours = estimated_hours * (1 - ai_score / 100)
-    rounded_hours = round(raw_hours * 4) / 4
+def format_hours(value: float) -> str:
+    rounded = round(value, 2)
+    if rounded.is_integer():
+        return str(int(rounded))
+    return f"{rounded:.2f}".rstrip("0").rstrip(".")
+
+
+def estimate_ai_hours(estimated_hours: float, ai_percent: int) -> float:
+    raw_hours = estimated_hours * ai_percent / 100
+    rounded_hours = round(raw_hours)
     if rounded_hours >= estimated_hours:
-        rounded_hours = estimated_hours - 0.25
-    return max(0.25, round(rounded_hours, 2))
+        rounded_hours = int(estimated_hours) - 1
+    return float(max(1, rounded_hours))
+
+
+def estimate_spent_hours(estimated_hours: float, ai_hours: float) -> float:
+    return max(0.25, round(estimated_hours - ai_hours, 2))
 
 
 def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
-    ai_score = score_commit(commit)
+    ai_percent = score_commit(commit)
     estimated_hours = options.estimated_hours or estimate_hours(commit)
-    spent_hours = options.spent_hours or estimate_spent_hours(estimated_hours, ai_score)
+    ai_hours = estimate_ai_hours(estimated_hours, ai_percent)
+    spent_hours = options.spent_hours or estimate_spent_hours(estimated_hours, ai_hours)
     return IssueDraft(
         subject=f"{options.prefix}{commit.subject}"[:255],
         description="\n".join(
@@ -73,7 +86,7 @@ def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
             for part in [
                 f"Git commit: {commit.sha}",
                 f"Commit date: {commit.date}",
-                f"AI Score: {ai_score}",
+                f"AI Score: {format_hours(ai_hours)} hours ({ai_percent}%)",
                 "",
                 commit.body,
             ]
@@ -84,9 +97,9 @@ def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
         done_ratio=100 if options.done_ratio is None else options.done_ratio,
         estimated_hours=estimated_hours,
         spent_hours=spent_hours,
-        ai_score=ai_score,
+        ai_score=ai_hours,
         custom_fields=(
-            [{"id": options.ai_score_field_id, "value": str(ai_score)}]
+            [{"id": options.ai_score_field_id, "value": format_hours(ai_hours)}]
             if options.ai_score_field_id
             else None
         ),
@@ -130,12 +143,18 @@ def import_issues(options: ImportOptions) -> int:
             done_ratio=draft.done_ratio,
         )
         if draft.spent_hours and options.activity_id:
-            redmine.create_time_entry(
-                issue_id=int(issue["id"]),
-                hours=draft.spent_hours,
-                activity_id=options.activity_id,
-                spent_on=commit.date,
-                comments=draft.subject,
-            )
+            if draft.spent_hours < 0.5:
+                print_skipped_time_entry(issue, "hours below Redmine minimum 0.5")
+            else:
+                try:
+                    redmine.create_time_entry(
+                        issue_id=int(issue["id"]),
+                        hours=draft.spent_hours,
+                        activity_id=options.activity_id,
+                        spent_on=commit.date,
+                        comments=draft.subject,
+                    )
+                except RuntimeError as exc:
+                    print_skipped_time_entry(issue, str(exc))
         print_created(issue, draft)
     return 0

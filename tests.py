@@ -4,10 +4,12 @@ from io import StringIO
 from redmine_github.controllers.import_controller import (
     ImportOptions,
     draft_from_commit,
+    estimate_ai_hours,
     estimate_spent_hours,
 )
 from redmine_github.models import Commit
 from redmine_github.views.cli_view import print_skipped_existing
+from redmine_github.views.cli_view import print_skipped_time_entry
 
 
 def test_issue_fields() -> None:
@@ -47,14 +49,18 @@ def test_issue_fields() -> None:
     assert draft.done_ratio == 100
     assert draft.estimated_hours == 2.5
     assert draft.spent_hours == 1.0
-    assert draft.ai_score == 35
-    assert draft.custom_fields == [{"id": 12, "value": "35"}]
+    assert draft.ai_score == 1.0
+    assert "AI Score: 1 hours (35%)" in draft.description
+    assert draft.custom_fields == [{"id": 12, "value": "1"}]
 
 
 def test_estimate_spent_hours_stays_below_estimate() -> None:
-    assert estimate_spent_hours(1.0, 25) == 0.75
-    assert estimate_spent_hours(2.5, 50) == 1.25
-    assert estimate_spent_hours(0.5, 25) == 0.25
+    assert estimate_ai_hours(2.0, 25) == 1.0
+    assert estimate_ai_hours(2.5, 50) == 1.0
+    assert estimate_ai_hours(4.0, 50) == 2.0
+    assert estimate_spent_hours(2.0, 1.0) == 1.0
+    assert estimate_spent_hours(2.5, 1.0) == 1.5
+    assert estimate_spent_hours(4.0, 2.0) == 2.0
 
 
 def test_skip_message() -> None:
@@ -66,6 +72,11 @@ def test_skip_message() -> None:
     with redirect_stdout(output):
         print_skipped_existing({"id": 123}, draft)
     assert output.getvalue().strip() == "skipped existing #123: [git] Add thing"
+
+    output = StringIO()
+    with redirect_stdout(output):
+        print_skipped_time_entry({"id": 123}, "hours below Redmine minimum 0.5")
+    assert output.getvalue().strip() == "skipped time entry #123: hours below Redmine minimum 0.5"
 
 
 if __name__ == "__main__":

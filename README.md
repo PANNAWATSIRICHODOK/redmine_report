@@ -49,8 +49,9 @@ python3 main.py --repo /path/to/github/repo --limit 1 \
 - status เป็น `Closed`
 - `% สำเร็จ` เป็น `100`
 - `เวลาที่ใช้โดยประมาณ` ประเมินจาก commit
-- `AI Score` ประเมินจาก commit เป็น `25-50%` และส่งเข้า custom field เมื่อมี `REDMINE_AI_SCORE_FIELD_ID`
+- `AI Score` ประเมินเป็นชั่วโมง โดยคิดจาก `25-50%` ของเวลาประมาณ และส่งเข้า custom field เมื่อมี `REDMINE_AI_SCORE_FIELD_ID`
 - `เวลาที่ใช้` auto-fill ให้น้อยกว่าเวลาประมาณ เมื่อมี `REDMINE_ACTIVITY_ID`
+- ถ้า `เวลาที่ใช้` ต่ำกว่า `0.5` หรือ Redmine ไม่รับ time entry ของ issue นั้น โปรแกรมจะข้าม time entry แล้วทำงานต่อ
 
 ค่าพวกนี้แก้ผ่าน `.env` ได้ทั้งหมด โดยแต่ละคนควรมี `.env` ของตัวเอง และไฟล์ `.env` ถูก ignore ไม่เข้า git
 

@@ -21,5 +21,5 @@ class IssueDraft:
     done_ratio: int | None = None
     estimated_hours: float | None = None
     spent_hours: float | None = None
-    ai_score: int | None = None
+    ai_score: float | None = None
     custom_fields: list[dict[str, object]] | None = None
