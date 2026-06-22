@@ -102,6 +102,7 @@ def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
             ]
             if part
         ),
+        note=commit.body,
         assigned_to_id=options.assigned_to_id,
         status_id=options.status_id,
         done_ratio=100 if options.done_ratio is None else options.done_ratio,
@@ -151,6 +152,7 @@ def import_issues(options: ImportOptions) -> int:
             issue_id=int(issue["id"]),
             status_id=draft.status_id,
             done_ratio=draft.done_ratio,
+            notes=draft.note,
         )
         if draft.spent_hours and options.activity_id:
             if draft.spent_hours < 0.5:

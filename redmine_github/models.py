@@ -16,6 +16,7 @@ class Commit:
 class IssueDraft:
     subject: str
     description: str
+    note: str = ""
     assigned_to_id: int | None = None
     status_id: int | None = None
     done_ratio: int | None = None

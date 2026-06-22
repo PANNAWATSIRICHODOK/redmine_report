@@ -44,6 +44,7 @@ def test_issue_fields() -> None:
     assert "Git commit: abc123456789" in draft.description
     assert "Commit date: 2026-06-22" in draft.description
     assert "Body text" in draft.description
+    assert draft.note == "Body text"
     assert draft.assigned_to_id == 28
     assert draft.status_id == 5
     assert draft.done_ratio == 100

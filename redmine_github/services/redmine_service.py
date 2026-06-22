@@ -84,12 +84,15 @@ class RedmineService:
         issue_id: int,
         status_id: int | None = None,
         done_ratio: int | None = None,
+        notes: str = "",
     ) -> None:
         issue: dict[str, Any] = {}
         if status_id:
             issue["status_id"] = status_id
         if done_ratio is not None:
             issue["done_ratio"] = done_ratio
+        if notes:
+            issue["notes"] = notes
         if not issue:
             return
         self._put(f"/issues/{issue_id}.json", {"issue": issue}, "Redmine update issue failed")
