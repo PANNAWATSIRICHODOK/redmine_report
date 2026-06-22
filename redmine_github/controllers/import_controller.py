@@ -36,17 +36,41 @@ class ImportOptions:
 
 def estimate_hours(commit: Commit) -> float:
     text = f"{commit.subject} {commit.body}".casefold()
-    if any(word in text for word in ["architecture", "migration", "enterprise", "multi-day"]):
-        return 18.0
-    if any(word in text for word in ["integration", "workflow", "refactor", "migrate"]):
-        return 8.0
-    if any(word in text for word in ["feature", "report", "dashboard", "api"]):
-        return 4.0
-    if any(word in text for word in ["fix", "bug", "add", "support"]):
-        return 2.5
-    if any(word in text for word in ["typo", "readme", "docs", "comment", "format"]):
-        return 0.5
-    return 1.0
+    if any(word in text for word in ["docs", "typo", "comment", "format", "readme"]):
+        hours = 0.5
+    elif any(word in text for word in ["architecture", "migration", "enterprise", "multi-day"]):
+        hours = 8.0
+    elif any(word in text for word in ["integration", "workflow", "refactor", "migrate"]):
+        hours = 5.0
+    elif any(word in text for word in ["feature", "report", "dashboard", "api"]):
+        hours = 3.0
+    elif any(word in text for word in ["fix", "bug", "add", "support"]):
+        hours = 1.5
+    else:
+        hours = 1.0
+
+    if commit.files_changed > 8:
+        hours += 1.5
+    elif commit.files_changed > 3:
+        hours += 0.5
+
+    if commit.lines_changed > 400:
+        hours += 3.0
+    elif commit.lines_changed > 150:
+        hours += 1.5
+    elif commit.lines_changed > 50:
+        hours += 0.5
+
+    if commit.body:
+        hours += 0.5
+
+    changed_paths = " ".join(commit.paths).casefold()
+    if any(word in changed_paths for word in ["docker", "config", ".env", "settings"]):
+        hours += 0.5
+    if any(word in changed_paths for word in ["auth", "payment", "database", "db/", "migration"]):
+        hours += 2.0
+
+    return hours
 
 
 def score_commit(commit: Commit) -> int:

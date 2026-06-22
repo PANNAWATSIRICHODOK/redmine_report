@@ -48,7 +48,7 @@ python3 main.py --repo /path/to/github/repo --limit 1 \
 - มอบหมายให้ user เจ้าของ API key
 - status เป็น `Closed`
 - `% สำเร็จ` เป็น `100`
-- `เวลาที่ใช้โดยประมาณ` ประเมินจาก keyword ใน commit ช่วง `0.5-18` ชั่วโมง
+- `เวลาที่ใช้โดยประมาณ` ประเมินจาก keyword, จำนวนไฟล์, จำนวนบรรทัด, commit body และ path ที่แก้
 - `AI Score` ประเมินเป็นชั่วโมง โดยคิดจาก `25-50%` ของเวลาประมาณ และส่งเข้า custom field เมื่อมี `REDMINE_AI_SCORE_FIELD_ID`
 - `เวลาที่ใช้` auto-fill ให้น้อยกว่าเวลาประมาณ เมื่อมี `REDMINE_ACTIVITY_ID`
 - ถ้า `เวลาที่ใช้` ต่ำกว่า `0.5` หรือ Redmine ไม่รับ time entry ของ issue นั้น โปรแกรมจะข้าม time entry แล้วทำงานต่อ

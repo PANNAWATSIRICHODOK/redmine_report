@@ -5,6 +5,26 @@ import subprocess
 from redmine_github.models import Commit
 
 
+def commit_stats(repo: str, sha: str) -> tuple[int, int, tuple[str, ...]]:
+    output = subprocess.check_output(
+        ["git", "-C", repo, "show", "--numstat", "--format=", sha],
+        text=True,
+    )
+    paths: list[str] = []
+    lines_changed = 0
+    for line in output.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
+        added, deleted, path = parts[0], parts[1], parts[2]
+        paths.append(path)
+        if added.isdigit():
+            lines_changed += int(added)
+        if deleted.isdigit():
+            lines_changed += int(deleted)
+    return len(paths), lines_changed, tuple(paths)
+
+
 def read_commits(
     repo: str,
     since: str = "",
@@ -36,5 +56,6 @@ def read_commits(
         if not record.strip():
             continue
         short_sha, sha, date, subject, body = (record.strip("\n").split("\x1f", 4) + [""])[:5]
-        commits.append(Commit(short_sha, sha, date, subject.strip(), body.strip()))
+        files_changed, lines_changed, paths = commit_stats(repo, sha)
+        commits.append(Commit(short_sha, sha, date, subject.strip(), body.strip(), files_changed, lines_changed, paths))
     return commits

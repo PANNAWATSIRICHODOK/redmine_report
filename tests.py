@@ -9,6 +9,7 @@ from redmine_github.controllers.import_controller import (
     estimate_spent_hours,
 )
 from redmine_github.models import Commit
+from redmine_github.views.cli_view import draft_summary
 from redmine_github.views.cli_view import print_skipped_existing
 from redmine_github.views.cli_view import print_skipped_time_entry
 
@@ -21,6 +22,9 @@ def test_issue_fields() -> None:
             date="2026-06-22",
             subject="Fix Redmine sync",
             body="Body text",
+            files_changed=4,
+            lines_changed=80,
+            paths=("redmine_github/config.py",),
         ),
         ImportOptions(
             repo=".",
@@ -54,6 +58,7 @@ def test_issue_fields() -> None:
     assert draft.ai_score == 1.0
     assert "AI Score: 1 hours (35%)" in draft.description
     assert draft.custom_fields == [{"id": 12, "value": "1"}]
+    assert draft_summary(draft) == "estimated=2.5h ai=1h spent=1h"
 
 
 def test_estimate_spent_hours_stays_below_estimate() -> None:
@@ -70,10 +75,14 @@ def test_estimate_spent_hours_stays_below_estimate() -> None:
 def test_estimate_hours_keyword_range() -> None:
     assert estimate_hours(Commit("", "", "", "docs typo", "")) == 0.5
     assert estimate_hours(Commit("", "", "", "init", "")) == 1.0
-    assert estimate_hours(Commit("", "", "", "fix bug", "")) == 2.5
-    assert estimate_hours(Commit("", "", "", "feature report api", "")) == 4.0
-    assert estimate_hours(Commit("", "", "", "refactor integration workflow", "")) == 8.0
-    assert estimate_hours(Commit("", "", "", "architecture migration multi-day", "")) == 18.0
+    assert estimate_hours(Commit("", "", "", "fix bug", "")) == 1.5
+    assert estimate_hours(Commit("", "", "", "feature report api", "")) == 3.0
+    assert estimate_hours(Commit("", "", "", "refactor integration workflow", "")) == 5.0
+    assert estimate_hours(Commit("", "", "", "architecture migration multi-day", "")) == 8.0
+    assert estimate_hours(Commit("", "", "", "fix bug", "", 4, 80, ("app/config.py",))) == 3.0
+    assert estimate_hours(Commit("", "", "", "feature", "body", 9, 450, ("auth/login.py",))) == 10.0
+    assert estimate_hours(Commit("", "", "", "architecture migration multi-day", "", 20, 1000, ("db/migration.sql",))) == 14.5
+    assert estimate_hours(Commit("", "", "", "architecture migration multi-day", "body", 20, 2000, ("auth/db/migration.sql",))) == 15.0
 
 
 def test_ai_score_is_omitted_when_it_cannot_be_below_estimate() -> None:
@@ -95,7 +104,7 @@ def test_skip_message() -> None:
     output = StringIO()
     with redirect_stdout(output):
         print_skipped_existing({"id": 123}, draft)
-    assert output.getvalue().strip() == "skipped existing #123: [git] Add thing"
+    assert output.getvalue().strip() == "skipped existing #123: [git] Add thing (estimated=1.5h ai=1h spent=0.5h)"
 
     output = StringIO()
     with redirect_stdout(output):

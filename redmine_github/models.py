@@ -10,6 +10,9 @@ class Commit:
     date: str
     subject: str
     body: str
+    files_changed: int = 0
+    lines_changed: int = 0
+    paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
