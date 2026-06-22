@@ -1,5 +1,9 @@
+from contextlib import redirect_stdout
+from io import StringIO
+
 from redmine_github.controllers.import_controller import ImportOptions, draft_from_commit
 from redmine_github.models import Commit
+from redmine_github.views.cli_view import print_skipped_existing
 
 
 def test_issue_fields() -> None:
@@ -41,6 +45,18 @@ def test_issue_fields() -> None:
     assert draft.custom_fields == [{"id": 12, "value": "2"}]
 
 
+def test_skip_message() -> None:
+    draft = draft_from_commit(
+        Commit("abc1234", "abc123456789", "2026-06-22", "Add thing", ""),
+        ImportOptions(".", "", "", 0, "", 17, 3, None, None, None, None, None, None, None, "[git] ", False),
+    )
+    output = StringIO()
+    with redirect_stdout(output):
+        print_skipped_existing({"id": 123}, draft)
+    assert output.getvalue().strip() == "skipped existing #123: [git] Add thing"
+
+
 if __name__ == "__main__":
     test_issue_fields()
+    test_skip_message()
     print("ok")

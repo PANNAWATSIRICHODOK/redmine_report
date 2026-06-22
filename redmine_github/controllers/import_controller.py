@@ -5,7 +5,12 @@ from dataclasses import dataclass
 from redmine_github.config import ConfigError, load_redmine_config
 from redmine_github.models import Commit, IssueDraft
 from redmine_github.services.git_service import read_commits
-from redmine_github.views.cli_view import print_created, print_dry_run, print_no_commits
+from redmine_github.views.cli_view import (
+    print_created,
+    print_dry_run,
+    print_no_commits,
+    print_skipped_existing,
+)
 
 
 @dataclass(frozen=True)
@@ -102,6 +107,10 @@ def import_issues(options: ImportOptions) -> int:
             print_dry_run(draft)
             continue
         assert redmine is not None
+        existing_issue = redmine.find_issue_by_commit(options.project_id, commit.sha)
+        if existing_issue:
+            print_skipped_existing(existing_issue, draft)
+            continue
         issue = redmine.create_issue(options.project_id, draft, options.tracker_id)
         if options.spent_hours and options.activity_id:
             redmine.create_time_entry(

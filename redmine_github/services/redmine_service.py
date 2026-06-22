@@ -79,6 +79,26 @@ class RedmineService:
             raise RuntimeError("Redmine response did not include time entry details")
         return time_entry
 
+    def find_issue_by_commit(self, project_id: int, commit_sha: str) -> dict[str, Any] | None:
+        data = self._get_json(
+            "/issues.json",
+            {
+                "project_id": project_id,
+                "status_id": "*",
+                "limit": 25,
+                "description": f"~{commit_sha}",
+            },
+            "Redmine search issue failed",
+        )
+        issues = data.get("issues", [])
+        if not isinstance(issues, list):
+            return None
+        marker = f"Git commit: {commit_sha}"
+        for issue in issues:
+            if isinstance(issue, dict) and marker in str(issue.get("description", "")):
+                return issue
+        return None
+
     def current_user_id(self) -> int:
         data = self._get("/users/current.json", "Redmine current user failed").json()
         user = data.get("user")
@@ -93,6 +113,23 @@ class RedmineService:
             if isinstance(status, dict) and str(status.get("name", "")).casefold() == "closed":
                 return int(status["id"])
         raise RuntimeError("Redmine does not expose a Closed status")
+
+    def _get_json(self, path: str, params: dict[str, Any], error_prefix: str) -> dict[str, Any]:
+        try:
+            response = self.session.get(
+                f"{self.base_url}{path}",
+                params=params,
+                timeout=REQUEST_TIMEOUT,
+                verify=self.verify_ssl,
+            )
+            response.raise_for_status()
+            return response.json()
+        except (requests.RequestException, ValueError) as exc:
+            message = str(exc)
+            response = getattr(exc, "response", None)
+            if response is not None and response.text.strip():
+                message = f"{message}: {response.text.strip()[:300]}"
+            raise RuntimeError(f"{error_prefix}: {message}") from exc
 
     def _get(self, path: str, error_prefix: str) -> requests.Response:
         try:

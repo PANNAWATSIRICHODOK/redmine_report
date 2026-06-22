@@ -15,3 +15,7 @@ def print_dry_run(draft: IssueDraft) -> None:
 
 def print_created(issue: dict[str, Any], draft: IssueDraft) -> None:
     print(f"created #{issue.get('id')}: {draft.subject}")
+
+
+def print_skipped_existing(issue: dict[str, Any], draft: IssueDraft) -> None:
+    print(f"skipped existing #{issue.get('id')}: {draft.subject}")
