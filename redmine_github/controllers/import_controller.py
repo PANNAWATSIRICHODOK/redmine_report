@@ -37,38 +37,38 @@ class ImportOptions:
 def estimate_hours(commit: Commit) -> float:
     text = f"{commit.subject} {commit.body}".casefold()
     if any(word in text for word in ["docs", "typo", "comment", "format", "readme"]):
-        hours = 0.5
-    elif any(word in text for word in ["architecture", "migration", "enterprise", "multi-day"]):
-        hours = 8.0
-    elif any(word in text for word in ["integration", "workflow", "refactor", "migrate"]):
-        hours = 5.0
-    elif any(word in text for word in ["feature", "report", "dashboard", "api"]):
-        hours = 3.0
-    elif any(word in text for word in ["fix", "bug", "add", "support"]):
-        hours = 1.5
-    else:
         hours = 1.0
+    elif any(word in text for word in ["architecture", "migration", "enterprise", "multi-day"]):
+        hours = 12.0
+    elif any(word in text for word in ["integration", "workflow", "refactor", "migrate"]):
+        hours = 8.0
+    elif any(word in text for word in ["feature", "report", "dashboard", "api"]):
+        hours = 5.0
+    elif any(word in text for word in ["fix", "bug", "add", "support"]):
+        hours = 3.0
+    else:
+        hours = 2.0
 
     if commit.files_changed > 8:
-        hours += 1.5
+        hours += 3.0
     elif commit.files_changed > 3:
-        hours += 0.5
+        hours += 1.0
 
     if commit.lines_changed > 400:
-        hours += 3.0
+        hours += 6.0
     elif commit.lines_changed > 150:
-        hours += 1.5
+        hours += 3.0
     elif commit.lines_changed > 50:
-        hours += 0.5
+        hours += 1.0
 
     if commit.body:
-        hours += 0.5
+        hours += 1.0
 
     changed_paths = " ".join(commit.paths).casefold()
     if any(word in changed_paths for word in ["docker", "config", ".env", "settings"]):
-        hours += 0.5
+        hours += 1.0
     if any(word in changed_paths for word in ["auth", "payment", "database", "db/", "migration"]):
-        hours += 2.0
+        hours += 3.0
 
     return hours
 
@@ -106,7 +106,7 @@ def estimate_ai_hours(estimated_hours: float, ai_percent: int) -> float | None:
 def estimate_spent_hours(estimated_hours: float, ai_hours: float | None) -> float:
     if ai_hours is None:
         return estimated_hours
-    return max(0.25, round(estimated_hours - ai_hours, 2))
+    return min(estimated_hours, max(0.25, round(estimated_hours - ai_hours, 2)))
 
 
 def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
@@ -178,12 +178,6 @@ def import_issues(options: ImportOptions) -> int:
             print_skipped_existing(existing_issue, draft)
             continue
         issue = redmine.create_issue(options.project_id, draft, options.tracker_id)
-        redmine.update_issue(
-            issue_id=int(issue["id"]),
-            status_id=draft.status_id,
-            done_ratio=draft.done_ratio,
-            notes=draft.note,
-        )
         if draft.spent_hours and options.activity_id:
             if draft.spent_hours < 0.5:
                 print_skipped_time_entry(issue, "hours below Redmine minimum 0.5")
@@ -198,5 +192,11 @@ def import_issues(options: ImportOptions) -> int:
                     )
                 except RuntimeError as exc:
                     print_skipped_time_entry(issue, str(exc))
+        redmine.update_issue(
+            issue_id=int(issue["id"]),
+            status_id=draft.status_id,
+            done_ratio=draft.done_ratio,
+            notes=draft.note,
+        )
         print_created(issue, draft)
     return 0
