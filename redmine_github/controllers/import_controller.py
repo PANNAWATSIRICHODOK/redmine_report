@@ -13,6 +13,8 @@ from redmine_github.views.cli_view import (
     print_skipped_time_entry,
 )
 
+ESTIMATED_HOURS_MULTIPLIER = 2.0
+
 
 @dataclass(frozen=True)
 class ImportOptions:
@@ -70,7 +72,7 @@ def estimate_hours(commit: Commit) -> float:
     if any(word in changed_paths for word in ["auth", "payment", "database", "db/", "migration"]):
         hours += 3.0
 
-    return hours
+    return hours * ESTIMATED_HOURS_MULTIPLIER
 
 
 def score_commit(commit: Commit) -> int:
@@ -104,9 +106,9 @@ def estimate_ai_hours(estimated_hours: float, ai_percent: int) -> float | None:
 
 
 def estimate_spent_hours(estimated_hours: float, ai_hours: float | None) -> float:
-    if ai_hours is None:
-        return estimated_hours
-    return min(estimated_hours, max(0.25, round(estimated_hours - ai_hours, 2)))
+    buffer_hours = max(0.5, round(estimated_hours * 0.1 * 4) / 4)
+    available_hours = estimated_hours - (ai_hours or 0) - buffer_hours
+    return max(0.0, round(available_hours, 2))
 
 
 def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:

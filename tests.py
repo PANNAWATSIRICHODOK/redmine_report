@@ -66,23 +66,23 @@ def test_estimate_spent_hours_stays_below_estimate() -> None:
     assert estimate_ai_hours(2.0, 25) == 1.0
     assert estimate_ai_hours(2.5, 50) == 1.0
     assert estimate_ai_hours(4.0, 50) == 2.0
-    assert estimate_spent_hours(1.0, None) == 1.0
-    assert estimate_spent_hours(2.0, 1.0) == 1.0
-    assert estimate_spent_hours(2.5, 1.0) == 1.5
-    assert estimate_spent_hours(4.0, 2.0) == 2.0
+    assert estimate_spent_hours(1.0, None) == 0.5
+    assert estimate_spent_hours(2.0, 1.0) == 0.5
+    assert estimate_spent_hours(2.5, 1.0) == 1.0
+    assert estimate_spent_hours(4.0, 2.0) == 1.5
 
 
 def test_estimate_hours_keyword_range() -> None:
-    assert estimate_hours(Commit("", "", "", "docs typo", "")) == 1.0
-    assert estimate_hours(Commit("", "", "", "init", "")) == 2.0
-    assert estimate_hours(Commit("", "", "", "fix bug", "")) == 3.0
-    assert estimate_hours(Commit("", "", "", "feature report api", "")) == 5.0
-    assert estimate_hours(Commit("", "", "", "refactor integration workflow", "")) == 8.0
-    assert estimate_hours(Commit("", "", "", "architecture migration multi-day", "")) == 12.0
-    assert estimate_hours(Commit("", "", "", "fix bug", "", 4, 80, ("app/config.py",))) == 6.0
-    assert estimate_hours(Commit("", "", "", "feature", "body", 9, 450, ("auth/login.py",))) == 18.0
-    assert estimate_hours(Commit("", "", "", "architecture migration multi-day", "", 20, 1000, ("db/migration.sql",))) == 24.0
-    assert estimate_hours(Commit("", "", "", "architecture migration multi-day", "body", 20, 2000, ("auth/db/migration.sql",))) == 25.0
+    assert estimate_hours(Commit("", "", "", "docs typo", "")) == 2.0
+    assert estimate_hours(Commit("", "", "", "init", "")) == 4.0
+    assert estimate_hours(Commit("", "", "", "fix bug", "")) == 6.0
+    assert estimate_hours(Commit("", "", "", "feature report api", "")) == 10.0
+    assert estimate_hours(Commit("", "", "", "refactor integration workflow", "")) == 16.0
+    assert estimate_hours(Commit("", "", "", "architecture migration multi-day", "")) == 24.0
+    assert estimate_hours(Commit("", "", "", "fix bug", "", 4, 80, ("app/config.py",))) == 12.0
+    assert estimate_hours(Commit("", "", "", "feature", "body", 9, 450, ("auth/login.py",))) == 36.0
+    assert estimate_hours(Commit("", "", "", "architecture migration multi-day", "", 20, 1000, ("db/migration.sql",))) == 48.0
+    assert estimate_hours(Commit("", "", "", "architecture migration multi-day", "body", 20, 2000, ("auth/db/migration.sql",))) == 50.0
 
 
 def test_ai_score_is_omitted_when_it_cannot_be_below_estimate() -> None:
@@ -104,7 +104,7 @@ def test_skip_message() -> None:
     output = StringIO()
     with redirect_stdout(output):
         print_skipped_existing({"id": 123}, draft)
-    assert output.getvalue().strip() == "skipped existing #123: [git] Add thing (estimated=3h ai=1h spent=2h)"
+    assert output.getvalue().strip() == "skipped existing #123: [git] Add thing (estimated=6h ai=2h spent=3.5h)"
 
     output = StringIO()
     with redirect_stdout(output):
