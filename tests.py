@@ -55,12 +55,25 @@ def test_issue_fields() -> None:
 
 
 def test_estimate_spent_hours_stays_below_estimate() -> None:
+    assert estimate_ai_hours(1.0, 50) is None
     assert estimate_ai_hours(2.0, 25) == 1.0
     assert estimate_ai_hours(2.5, 50) == 1.0
     assert estimate_ai_hours(4.0, 50) == 2.0
+    assert estimate_spent_hours(1.0, None) == 1.0
     assert estimate_spent_hours(2.0, 1.0) == 1.0
     assert estimate_spent_hours(2.5, 1.0) == 1.5
     assert estimate_spent_hours(4.0, 2.0) == 2.0
+
+
+def test_ai_score_is_omitted_when_it_cannot_be_below_estimate() -> None:
+    draft = draft_from_commit(
+        Commit("abc1234", "abc123456789", "2026-06-22", "Tiny task", ""),
+        ImportOptions(".", "", "", 0, "", 17, 3, None, None, None, 1.0, None, 9, 12, "[git] ", False),
+    )
+    assert draft.estimated_hours == 1.0
+    assert draft.ai_score is None
+    assert draft.custom_fields is None
+    assert "AI Score: omitted" in draft.description
 
 
 def test_skip_message() -> None:
@@ -82,5 +95,6 @@ def test_skip_message() -> None:
 if __name__ == "__main__":
     test_issue_fields()
     test_estimate_spent_hours_stays_below_estimate()
+    test_ai_score_is_omitted_when_it_cannot_be_below_estimate()
     test_skip_message()
     print("ok")

@@ -62,15 +62,20 @@ def format_hours(value: float) -> str:
     return f"{rounded:.2f}".rstrip("0").rstrip(".")
 
 
-def estimate_ai_hours(estimated_hours: float, ai_percent: int) -> float:
+def estimate_ai_hours(estimated_hours: float, ai_percent: int) -> float | None:
+    if estimated_hours <= 1:
+        return None
     raw_hours = estimated_hours * ai_percent / 100
     rounded_hours = round(raw_hours)
     if rounded_hours >= estimated_hours:
         rounded_hours = int(estimated_hours) - 1
-    return float(max(1, rounded_hours))
+    ai_hours = float(max(1, rounded_hours))
+    return ai_hours if ai_hours < estimated_hours else None
 
 
-def estimate_spent_hours(estimated_hours: float, ai_hours: float) -> float:
+def estimate_spent_hours(estimated_hours: float, ai_hours: float | None) -> float:
+    if ai_hours is None:
+        return estimated_hours
     return max(0.25, round(estimated_hours - ai_hours, 2))
 
 
@@ -79,6 +84,11 @@ def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
     estimated_hours = options.estimated_hours or estimate_hours(commit)
     ai_hours = estimate_ai_hours(estimated_hours, ai_percent)
     spent_hours = options.spent_hours or estimate_spent_hours(estimated_hours, ai_hours)
+    ai_score_line = (
+        f"AI Score: {format_hours(ai_hours)} hours ({ai_percent}%)"
+        if ai_hours is not None
+        else "AI Score: omitted because estimated hours is too low"
+    )
     return IssueDraft(
         subject=f"{options.prefix}{commit.subject}"[:255],
         description="\n".join(
@@ -86,7 +96,7 @@ def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
             for part in [
                 f"Git commit: {commit.sha}",
                 f"Commit date: {commit.date}",
-                f"AI Score: {format_hours(ai_hours)} hours ({ai_percent}%)",
+                ai_score_line,
                 "",
                 commit.body,
             ]
@@ -100,7 +110,7 @@ def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
         ai_score=ai_hours,
         custom_fields=(
             [{"id": options.ai_score_field_id, "value": format_hours(ai_hours)}]
-            if options.ai_score_field_id
+            if options.ai_score_field_id and ai_hours is not None
             else None
         ),
     )
