@@ -16,3 +16,8 @@ class Commit:
 class IssueDraft:
     subject: str
     description: str
+    assigned_to_id: int | None = None
+    status_id: int | None = None
+    done_ratio: int | None = None
+    estimated_hours: float | None = None
+    custom_fields: list[dict[str, object]] | None = None

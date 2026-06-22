@@ -5,7 +5,13 @@ import subprocess
 from redmine_github.models import Commit
 
 
-def read_commits(repo: str, since: str = "", until: str = "", limit: int = 0) -> list[Commit]:
+def read_commits(
+    repo: str,
+    since: str = "",
+    until: str = "",
+    limit: int = 0,
+    author: str = "",
+) -> list[Commit]:
     command = [
         "git",
         "-C",
@@ -21,6 +27,8 @@ def read_commits(repo: str, since: str = "", until: str = "", limit: int = 0) ->
         command.append(f"--since={since}")
     if until:
         command.append(f"--until={until}")
+    if author:
+        command.append(f"--author={author}")
 
     output = subprocess.check_output(command, text=True).strip("\x1e\n")
     commits: list[Commit] = []

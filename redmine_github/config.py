@@ -47,6 +47,20 @@ def env_int(name: str, default: int = 0) -> int:
         raise ConfigError(f"{name} must be an integer") from exc
 
 
+def env_float(name: str, default: float | None = None) -> float | None:
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        return float(raw_value)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be a number") from exc
+
+
+def env_str(name: str, default: str = "") -> str:
+    return os.getenv(name, default).strip()
+
+
 def load_redmine_config() -> RedmineConfig:
     load_dotenv()
     base_url = os.getenv("REDMINE_BASE_URL", "").strip().rstrip("/")

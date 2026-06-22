@@ -33,24 +33,96 @@ class RedmineService:
         }
         if tracker_id:
             issue["tracker_id"] = tracker_id
+        if draft.assigned_to_id:
+            issue["assigned_to_id"] = draft.assigned_to_id
+        if draft.status_id:
+            issue["status_id"] = draft.status_id
+        if draft.done_ratio is not None:
+            issue["done_ratio"] = draft.done_ratio
+        if draft.estimated_hours:
+            issue["estimated_hours"] = draft.estimated_hours
+        if draft.custom_fields:
+            issue["custom_fields"] = draft.custom_fields
 
-        try:
-            response = self.session.post(
-                f"{self.base_url}/issues.json",
-                json={"issue": issue},
-                timeout=REQUEST_TIMEOUT,
-                verify=self.verify_ssl,
-            )
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            message = str(exc)
-            response = getattr(exc, "response", None)
-            if response is not None and response.text.strip():
-                message = f"{message}: {response.text.strip()[:300]}"
-            raise RuntimeError(f"Redmine create issue failed: {message}") from exc
+        response = self._post("/issues.json", {"issue": issue}, "Redmine create issue failed")
 
         data = response.json()
         created_issue = data.get("issue")
         if not isinstance(created_issue, dict):
             raise RuntimeError("Redmine response did not include issue details")
         return created_issue
+
+    def create_time_entry(
+        self,
+        issue_id: int,
+        hours: float,
+        activity_id: int,
+        spent_on: str,
+        comments: str,
+    ) -> dict[str, Any]:
+        response = self._post(
+            "/time_entries.json",
+            {
+                "time_entry": {
+                    "issue_id": issue_id,
+                    "hours": hours,
+                    "activity_id": activity_id,
+                    "spent_on": spent_on,
+                    "comments": comments,
+                }
+            },
+            "Redmine create time entry failed",
+        )
+        data = response.json()
+        time_entry = data.get("time_entry")
+        if not isinstance(time_entry, dict):
+            raise RuntimeError("Redmine response did not include time entry details")
+        return time_entry
+
+    def current_user_id(self) -> int:
+        data = self._get("/users/current.json", "Redmine current user failed").json()
+        user = data.get("user")
+        if not isinstance(user, dict) or not user.get("id"):
+            raise RuntimeError("Redmine response did not include current user id")
+        return int(user["id"])
+
+    def closed_status_id(self) -> int:
+        data = self._get("/issue_statuses.json", "Redmine issue statuses failed").json()
+        statuses = data.get("issue_statuses", [])
+        for status in statuses:
+            if isinstance(status, dict) and str(status.get("name", "")).casefold() == "closed":
+                return int(status["id"])
+        raise RuntimeError("Redmine does not expose a Closed status")
+
+    def _get(self, path: str, error_prefix: str) -> requests.Response:
+        try:
+            response = self.session.get(
+                f"{self.base_url}{path}",
+                timeout=REQUEST_TIMEOUT,
+                verify=self.verify_ssl,
+            )
+            response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            message = str(exc)
+            response = getattr(exc, "response", None)
+            if response is not None and response.text.strip():
+                message = f"{message}: {response.text.strip()[:300]}"
+            raise RuntimeError(f"{error_prefix}: {message}") from exc
+
+    def _post(self, path: str, payload: dict[str, Any], error_prefix: str) -> requests.Response:
+        try:
+            response = self.session.post(
+                f"{self.base_url}{path}",
+                json=payload,
+                timeout=REQUEST_TIMEOUT,
+                verify=self.verify_ssl,
+            )
+            response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            message = str(exc)
+            response = getattr(exc, "response", None)
+            if response is not None and response.text.strip():
+                message = f"{message}: {response.text.strip()[:300]}"
+            raise RuntimeError(f"{error_prefix}: {message}") from exc
