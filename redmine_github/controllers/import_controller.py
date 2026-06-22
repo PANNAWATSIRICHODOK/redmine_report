@@ -36,11 +36,17 @@ class ImportOptions:
 
 def estimate_hours(commit: Commit) -> float:
     text = f"{commit.subject} {commit.body}".casefold()
-    if any(word in text for word in ["refactor", "migrate", "integration", "workflow"]):
+    if any(word in text for word in ["architecture", "migration", "enterprise", "multi-day"]):
+        return 18.0
+    if any(word in text for word in ["integration", "workflow", "refactor", "migrate"]):
+        return 8.0
+    if any(word in text for word in ["feature", "report", "dashboard", "api"]):
         return 4.0
-    if any(word in text for word in ["fix", "bug", "report", "feature", "add"]):
+    if any(word in text for word in ["fix", "bug", "add", "support"]):
         return 2.5
-    return 2.0
+    if any(word in text for word in ["typo", "readme", "docs", "comment", "format"]):
+        return 0.5
+    return 1.0
 
 
 def score_commit(commit: Commit) -> int:

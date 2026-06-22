@@ -5,6 +5,7 @@ from redmine_github.controllers.import_controller import (
     ImportOptions,
     draft_from_commit,
     estimate_ai_hours,
+    estimate_hours,
     estimate_spent_hours,
 )
 from redmine_github.models import Commit
@@ -66,6 +67,15 @@ def test_estimate_spent_hours_stays_below_estimate() -> None:
     assert estimate_spent_hours(4.0, 2.0) == 2.0
 
 
+def test_estimate_hours_keyword_range() -> None:
+    assert estimate_hours(Commit("", "", "", "docs typo", "")) == 0.5
+    assert estimate_hours(Commit("", "", "", "init", "")) == 1.0
+    assert estimate_hours(Commit("", "", "", "fix bug", "")) == 2.5
+    assert estimate_hours(Commit("", "", "", "feature report api", "")) == 4.0
+    assert estimate_hours(Commit("", "", "", "refactor integration workflow", "")) == 8.0
+    assert estimate_hours(Commit("", "", "", "architecture migration multi-day", "")) == 18.0
+
+
 def test_ai_score_is_omitted_when_it_cannot_be_below_estimate() -> None:
     draft = draft_from_commit(
         Commit("abc1234", "abc123456789", "2026-06-22", "Tiny task", ""),
@@ -96,6 +106,7 @@ def test_skip_message() -> None:
 if __name__ == "__main__":
     test_issue_fields()
     test_estimate_spent_hours_stays_below_estimate()
+    test_estimate_hours_keyword_range()
     test_ai_score_is_omitted_when_it_cannot_be_below_estimate()
     test_skip_message()
     print("ok")
