@@ -79,6 +79,21 @@ class RedmineService:
             raise RuntimeError("Redmine response did not include time entry details")
         return time_entry
 
+    def update_issue(
+        self,
+        issue_id: int,
+        status_id: int | None = None,
+        done_ratio: int | None = None,
+    ) -> None:
+        issue: dict[str, Any] = {}
+        if status_id:
+            issue["status_id"] = status_id
+        if done_ratio is not None:
+            issue["done_ratio"] = done_ratio
+        if not issue:
+            return
+        self._put(f"/issues/{issue_id}.json", {"issue": issue}, "Redmine update issue failed")
+
     def find_issue_by_commit(self, project_id: int, commit_sha: str) -> dict[str, Any] | None:
         data = self._get_json(
             "/issues.json",
@@ -150,6 +165,23 @@ class RedmineService:
     def _post(self, path: str, payload: dict[str, Any], error_prefix: str) -> requests.Response:
         try:
             response = self.session.post(
+                f"{self.base_url}{path}",
+                json=payload,
+                timeout=REQUEST_TIMEOUT,
+                verify=self.verify_ssl,
+            )
+            response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            message = str(exc)
+            response = getattr(exc, "response", None)
+            if response is not None and response.text.strip():
+                message = f"{message}: {response.text.strip()[:300]}"
+            raise RuntimeError(f"{error_prefix}: {message}") from exc
+
+    def _put(self, path: str, payload: dict[str, Any], error_prefix: str) -> requests.Response:
+        try:
+            response = self.session.put(
                 f"{self.base_url}{path}",
                 json=payload,
                 timeout=REQUEST_TIMEOUT,

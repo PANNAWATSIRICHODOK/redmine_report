@@ -112,6 +112,11 @@ def import_issues(options: ImportOptions) -> int:
             print_skipped_existing(existing_issue, draft)
             continue
         issue = redmine.create_issue(options.project_id, draft, options.tracker_id)
+        redmine.update_issue(
+            issue_id=int(issue["id"]),
+            status_id=draft.status_id,
+            done_ratio=draft.done_ratio,
+        )
         if options.spent_hours and options.activity_id:
             redmine.create_time_entry(
                 issue_id=int(issue["id"]),
