@@ -44,18 +44,28 @@ def estimate_hours(commit: Commit) -> float:
 
 def score_commit(commit: Commit) -> int:
     text = f"{commit.subject} {commit.body}".casefold()
-    score = 1
+    score = 25
     if any(word in text for word in ["feature", "refactor", "integration", "api"]):
-        score += 1
+        score += 10
     if commit.body or len(commit.subject) > 40:
-        score += 1
+        score += 10
     if any(word in text for word in ["security", "payment", "migration", "production"]):
-        score += 1
-    return min(score, 5)
+        score += 5
+    return min(score, 50)
+
+
+def estimate_spent_hours(estimated_hours: float, ai_score: int) -> float:
+    raw_hours = estimated_hours * (1 - ai_score / 100)
+    rounded_hours = round(raw_hours * 4) / 4
+    if rounded_hours >= estimated_hours:
+        rounded_hours = estimated_hours - 0.25
+    return max(0.25, round(rounded_hours, 2))
 
 
 def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
     ai_score = score_commit(commit)
+    estimated_hours = options.estimated_hours or estimate_hours(commit)
+    spent_hours = options.spent_hours or estimate_spent_hours(estimated_hours, ai_score)
     return IssueDraft(
         subject=f"{options.prefix}{commit.subject}"[:255],
         description="\n".join(
@@ -72,7 +82,9 @@ def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
         assigned_to_id=options.assigned_to_id,
         status_id=options.status_id,
         done_ratio=100 if options.done_ratio is None else options.done_ratio,
-        estimated_hours=options.estimated_hours or estimate_hours(commit),
+        estimated_hours=estimated_hours,
+        spent_hours=spent_hours,
+        ai_score=ai_score,
         custom_fields=(
             [{"id": options.ai_score_field_id, "value": str(ai_score)}]
             if options.ai_score_field_id
@@ -117,10 +129,10 @@ def import_issues(options: ImportOptions) -> int:
             status_id=draft.status_id,
             done_ratio=draft.done_ratio,
         )
-        if options.spent_hours and options.activity_id:
+        if draft.spent_hours and options.activity_id:
             redmine.create_time_entry(
                 issue_id=int(issue["id"]),
-                hours=options.spent_hours,
+                hours=draft.spent_hours,
                 activity_id=options.activity_id,
                 spent_on=commit.date,
                 comments=draft.subject,

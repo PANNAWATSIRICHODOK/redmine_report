@@ -1,7 +1,11 @@
 from contextlib import redirect_stdout
 from io import StringIO
 
-from redmine_github.controllers.import_controller import ImportOptions, draft_from_commit
+from redmine_github.controllers.import_controller import (
+    ImportOptions,
+    draft_from_commit,
+    estimate_spent_hours,
+)
 from redmine_github.models import Commit
 from redmine_github.views.cli_view import print_skipped_existing
 
@@ -42,7 +46,15 @@ def test_issue_fields() -> None:
     assert draft.status_id == 5
     assert draft.done_ratio == 100
     assert draft.estimated_hours == 2.5
-    assert draft.custom_fields == [{"id": 12, "value": "2"}]
+    assert draft.spent_hours == 1.0
+    assert draft.ai_score == 35
+    assert draft.custom_fields == [{"id": 12, "value": "35"}]
+
+
+def test_estimate_spent_hours_stays_below_estimate() -> None:
+    assert estimate_spent_hours(1.0, 25) == 0.75
+    assert estimate_spent_hours(2.5, 50) == 1.25
+    assert estimate_spent_hours(0.5, 25) == 0.25
 
 
 def test_skip_message() -> None:
@@ -58,5 +70,6 @@ def test_skip_message() -> None:
 
 if __name__ == "__main__":
     test_issue_fields()
+    test_estimate_spent_hours_stays_below_estimate()
     test_skip_message()
     print("ok")

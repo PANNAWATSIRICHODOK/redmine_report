@@ -20,4 +20,6 @@ class IssueDraft:
     status_id: int | None = None
     done_ratio: int | None = None
     estimated_hours: float | None = None
+    spent_hours: float | None = None
+    ai_score: int | None = None
     custom_fields: list[dict[str, object]] | None = None
