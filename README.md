@@ -1,75 +1,77 @@
-# GitHub Commits to Redmine Issues
+# Git Commits to Redmine
 
-สร้าง Redmine issues จาก git commits แบบ bulk ผ่าน Redmine REST API
+สร้าง Redmine issues จาก git commits แบบ bulk ผ่าน Redmine API
 
-## Setup
+## ติดตั้ง
 
 ```bash
 python3 -m pip install -r requirements.txt
-```
-
-สร้าง `.env` จากตัวอย่าง:
-
-```bash
 cp .env.example .env
 ```
 
-แล้วแก้ `.env` เป็น API key, project, tracker, author ของคนที่รันเอง
+แก้ `.env` ให้เป็นค่า Redmine/API key/project/tracker ของคนที่รันเอง
 
-## Dry Run
-
-ดูรายการก่อน ยังไม่ post จริง:
+## ทดสอบก่อน Post
 
 ```bash
-python3 main.py --repo /path/to/github/repo --since 2026-06-01
+python3 main.py --repo /path/to/git/repo --limit 5
 ```
 
-กรองเฉพาะ commit ของคนรัน:
+ตัวอย่าง repo จริง:
 
 ```bash
-python3 main.py --repo /path/to/github/repo --since 2026-06-01 --author "Your Git Name Or Email"
+python3 main.py --repo /Users/bic-pannawat/Documents/GITHUB/feedprobackEnd_docker --limit 5
 ```
 
 ## Post จริง
 
-```bash
-python3 main.py --repo /path/to/github/repo --since 2026-06-01 --post
-```
-
-ใส่ข้อมูลให้ครบแบบตัวอย่าง issue เดิม:
+ลอง 1 commit ก่อน:
 
 ```bash
-python3 main.py --repo /path/to/github/repo --limit 1 \
-  --post
+python3 main.py --repo /path/to/git/repo --limit 1 --post
 ```
 
-ค่า default ตอน `--post`:
-
-- มอบหมายให้ user เจ้าของ API key
-- status เป็น `Closed`
-- `% สำเร็จ` เป็น `100`
-- ถ้ามี `REDMINE_PARENT_ISSUE_ID` จะสร้าง commit issue เป็น subtask ของ issue นั้น
-- `เวลาที่ใช้โดยประมาณ` ประเมินจาก keyword, จำนวนไฟล์, จำนวนบรรทัด, commit body และ path ที่แก้ แล้วคูณเผื่อ `2x`
-- `AI Score` ประเมินเป็นชั่วโมง โดยคิดจาก `25-50%` ของเวลาประมาณ และส่งเข้า custom field เมื่อมี `REDMINE_AI_SCORE_FIELD_ID`
-- `เวลาที่ใช้` auto-fill ให้น้อยกว่าเวลาประมาณ โดยเหลือ buffer อย่างน้อย `0.5` ชั่วโมง เมื่อมี `REDMINE_ACTIVITY_ID`
-- ถ้า `เวลาที่ใช้` ต่ำกว่า `0.5` หรือ Redmine ไม่รับ time entry ของ issue นั้น โปรแกรมจะข้าม time entry แล้วทำงานต่อ
-- ถ้า commit มี description/body โปรแกรมจะเพิ่มเป็น Note ใน issue หลังสร้าง
-
-ค่าพวกนี้แก้ผ่าน `.env` ได้ทั้งหมด โดยแต่ละคนควรมี `.env` ของตัวเอง และไฟล์ `.env` ถูก ignore ไม่เข้า git
-
-จำกัดจำนวน:
+Post ตามช่วงวันที่ commit:
 
 ```bash
-python3 main.py --repo /path/to/github/repo --limit 20 --post
+python3 main.py --repo /path/to/git/repo --since 2026-01-01 --until 2026-06-22 --post
 ```
 
-## โครงสร้าง
+Post ทั้งหมดตาม filter ใน `.env`:
+
+```bash
+python3 main.py --repo /path/to/git/repo --post
+```
+
+กัน commit ซ้ำด้วย commit SHA ถ้าเคยสร้างแล้วจะขึ้น `skipped existing`
+
+## ENV สำคัญ
+
+```env
+REDMINE_PROJECT_ID=17
+REDMINE_TRACKER_ID=2
+REDMINE_PARENT_ISSUE_ID=4184
+GIT_AUTHOR=Pannawat Sirichodok
+```
+
+- `REDMINE_PROJECT_ID`: project ปลายทาง เช่น `17 = SD-DEV`
+- `REDMINE_TRACKER_ID`: tracker เช่น `2 = Feature`, `3 = Support`
+- `REDMINE_PARENT_ISSUE_ID`: ใส่ถ้าต้องการสร้างเป็น subtask
+- `GIT_AUTHOR`: ใส่เพื่อกรองเฉพาะ commit ของตัวเอง
+
+ค่าอื่นดูได้ใน `.env.example`
+
+## Test
+
+```bash
+python3 tests.py
+```
+
+## ไฟล์หลัก
 
 ```text
-.env.example                                 template ENV สำหรับแต่ละคน
-main.py                                      entrypoint
-redmine_github/cli.py                        CLI arguments
-redmine_github/importer.py                   อ่าน git log, ประเมินเวลา, import commits -> issues
-redmine_github/redmine.py                    อ่าน .env และเรียก Redmine API
-tests.py                                     self-check แบบ stdlib
+main.py
+redmine_github/cli.py
+redmine_github/importer.py
+redmine_github/redmine.py
 ```
