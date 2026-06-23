@@ -17,10 +17,10 @@ cp .env.example .env
 python3 main.py --repo /path/to/git/repo --limit 5
 ```
 
-ตัวอย่าง repo จริง:
+ตัวอย่าง:
 
 ```bash
-python3 main.py --repo /Users/bic-pannawat/Documents/GITHUB/feedprobackEnd_docker --limit 5
+python3 main.py --repo /path/to/your/git/repo --limit 5
 ```
 
 ## Post จริง
@@ -45,21 +45,16 @@ python3 main.py --repo /path/to/git/repo --post
 
 กัน commit ซ้ำด้วย commit SHA ถ้าเคยสร้างแล้วจะขึ้น `skipped existing`
 
-## ENV สำคัญ
+## ENV
 
-```env
-REDMINE_PROJECT_ID=17
-REDMINE_TRACKER_ID=2
-REDMINE_PARENT_ISSUE_ID=4184
-GIT_AUTHOR=Pannawat Sirichodok
-```
+ตั้งค่าจาก `.env.example` แล้วแก้ใน `.env` ของแต่ละคน
 
-- `REDMINE_PROJECT_ID`: project ปลายทาง เช่น `17 = SD-DEV`
-- `REDMINE_TRACKER_ID`: tracker เช่น `2 = Feature`, `3 = Support`
+- `REDMINE_BASE_URL`: URL Redmine
+- `REDMINE_API_KEY`: API key ของคนที่รัน
+- `REDMINE_PROJECT_ID`: project ปลายทาง
+- `REDMINE_TRACKER_ID`: tracker เช่น Feature หรือ Support
 - `REDMINE_PARENT_ISSUE_ID`: ใส่ถ้าต้องการสร้างเป็น subtask
 - `GIT_AUTHOR`: ใส่เพื่อกรองเฉพาะ commit ของตัวเอง
-
-ค่าอื่นดูได้ใน `.env.example`
 
 ## Test
 
