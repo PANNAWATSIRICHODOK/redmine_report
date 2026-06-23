@@ -1,3 +1,4 @@
+from copy import deepcopy
 from contextlib import redirect_stdout
 from io import StringIO
 
@@ -9,9 +10,27 @@ from redmine_github.controllers.import_controller import (
     estimate_spent_hours,
 )
 from redmine_github.models import Commit
+from redmine_github.models import IssueDraft
+from redmine_github.services.redmine_service import RedmineService
 from redmine_github.views.cli_view import draft_summary
 from redmine_github.views.cli_view import print_skipped_existing
 from redmine_github.views.cli_view import print_skipped_time_entry
+
+
+class FakeResponse:
+    def json(self) -> dict:
+        return {"issue": {"id": 123}}
+
+
+class FakeRedmineService(RedmineService):
+    def __init__(self) -> None:
+        self.payloads = []
+
+    def _post(self, path, payload, error_prefix):
+        self.payloads.append(deepcopy(payload))
+        if len(self.payloads) == 1:
+            raise RuntimeError("Redmine create issue failed: Ai score ไม่อยู่ในรายการ")
+        return FakeResponse()
 
 
 def test_issue_fields() -> None:
@@ -34,6 +53,7 @@ def test_issue_fields() -> None:
             author="Developer",
             project_id=17,
             tracker_id=3,
+            parent_issue_id=4184,
             assigned_to_id=28,
             status_id=5,
             done_ratio=100,
@@ -50,6 +70,7 @@ def test_issue_fields() -> None:
     assert "Commit date: 2026-06-22" in draft.description
     assert "Body text" in draft.description
     assert draft.note == "Body text"
+    assert draft.parent_issue_id == 4184
     assert draft.assigned_to_id == 28
     assert draft.status_id == 5
     assert draft.done_ratio == 100
@@ -88,7 +109,7 @@ def test_estimate_hours_keyword_range() -> None:
 def test_ai_score_is_omitted_when_it_cannot_be_below_estimate() -> None:
     draft = draft_from_commit(
         Commit("abc1234", "abc123456789", "2026-06-22", "Tiny task", ""),
-        ImportOptions(".", "", "", 0, "", 17, 3, None, None, None, 1.0, None, 9, 12, "[git] ", False),
+        ImportOptions(".", "", "", 0, "", 17, 3, None, None, None, None, 1.0, None, 9, 12, "[git] ", False),
     )
     assert draft.estimated_hours == 1.0
     assert draft.ai_score is None
@@ -99,7 +120,7 @@ def test_ai_score_is_omitted_when_it_cannot_be_below_estimate() -> None:
 def test_skip_message() -> None:
     draft = draft_from_commit(
         Commit("abc1234", "abc123456789", "2026-06-22", "Add thing", ""),
-        ImportOptions(".", "", "", 0, "", 17, 3, None, None, None, None, None, None, None, "[git] ", False),
+        ImportOptions(".", "", "", 0, "", 17, 3, None, None, None, None, None, None, None, None, "[git] ", False),
     )
     output = StringIO()
     with redirect_stdout(output):
@@ -112,10 +133,23 @@ def test_skip_message() -> None:
     assert output.getvalue().strip() == "skipped time entry #123: hours below Redmine minimum 0.5"
 
 
+def test_create_issue_retries_without_invalid_ai_score() -> None:
+    redmine = FakeRedmineService()
+    issue = redmine.create_issue(
+        16,
+        IssueDraft("subject", "description", custom_fields=[{"id": 14, "value": "99"}]),
+        3,
+    )
+    assert issue["id"] == 123
+    assert redmine.payloads[0]["issue"]["custom_fields"] == [{"id": 14, "value": "99"}]
+    assert "custom_fields" not in redmine.payloads[1]["issue"]
+
+
 if __name__ == "__main__":
     test_issue_fields()
     test_estimate_spent_hours_stays_below_estimate()
     test_estimate_hours_keyword_range()
     test_ai_score_is_omitted_when_it_cannot_be_below_estimate()
     test_skip_message()
+    test_create_issue_retries_without_invalid_ai_score()
     print("ok")

@@ -20,6 +20,7 @@ class IssueDraft:
     subject: str
     description: str
     note: str = ""
+    parent_issue_id: int | None = None
     assigned_to_id: int | None = None
     status_id: int | None = None
     done_ratio: int | None = None

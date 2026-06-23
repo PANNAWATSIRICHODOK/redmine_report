@@ -38,6 +38,7 @@ def parser() -> argparse.ArgumentParser:
     cli.add_argument("--limit", type=int, default=0, help="max commits to read")
     cli.add_argument("--project-id", type=positive_int, default=env_int("REDMINE_PROJECT_ID"))
     cli.add_argument("--tracker-id", type=positive_int, default=env_int("REDMINE_TRACKER_ID") or None)
+    cli.add_argument("--parent-issue-id", type=positive_int, default=env_int("REDMINE_PARENT_ISSUE_ID") or None)
     cli.add_argument("--assigned-to-id", type=positive_int, default=env_int("REDMINE_ASSIGNED_TO_ID") or None)
     cli.add_argument("--status-id", type=positive_int, default=env_int("REDMINE_STATUS_ID") or None)
     cli.add_argument("--done-ratio", type=int, default=env_int("REDMINE_DONE_RATIO", -1))
@@ -62,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
             author=args.author,
             project_id=args.project_id,
             tracker_id=args.tracker_id,
+            parent_issue_id=args.parent_issue_id,
             assigned_to_id=args.assigned_to_id,
             status_id=args.status_id,
             done_ratio=args.done_ratio if args.done_ratio >= 0 else None,

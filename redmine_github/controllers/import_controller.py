@@ -25,6 +25,7 @@ class ImportOptions:
     author: str
     project_id: int
     tracker_id: int | None
+    parent_issue_id: int | None
     assigned_to_id: int | None
     status_id: int | None
     done_ratio: int | None
@@ -135,6 +136,7 @@ def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
             if part
         ),
         note=commit.body,
+        parent_issue_id=options.parent_issue_id,
         assigned_to_id=options.assigned_to_id,
         status_id=options.status_id,
         done_ratio=100 if options.done_ratio is None else options.done_ratio,

@@ -48,6 +48,7 @@ python3 main.py --repo /path/to/github/repo --limit 1 \
 - มอบหมายให้ user เจ้าของ API key
 - status เป็น `Closed`
 - `% สำเร็จ` เป็น `100`
+- ถ้ามี `REDMINE_PARENT_ISSUE_ID` จะสร้าง commit issue เป็น subtask ของ issue นั้น
 - `เวลาที่ใช้โดยประมาณ` ประเมินจาก keyword, จำนวนไฟล์, จำนวนบรรทัด, commit body และ path ที่แก้ แล้วคูณเผื่อ `2x`
 - `AI Score` ประเมินเป็นชั่วโมง โดยคิดจาก `25-50%` ของเวลาประมาณ และส่งเข้า custom field เมื่อมี `REDMINE_AI_SCORE_FIELD_ID`
 - `เวลาที่ใช้` auto-fill ให้น้อยกว่าเวลาประมาณ โดยเหลือ buffer อย่างน้อย `0.5` ชั่วโมง เมื่อมี `REDMINE_ACTIVITY_ID`

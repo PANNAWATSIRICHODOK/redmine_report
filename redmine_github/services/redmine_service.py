@@ -33,6 +33,8 @@ class RedmineService:
         }
         if tracker_id:
             issue["tracker_id"] = tracker_id
+        if draft.parent_issue_id:
+            issue["parent_issue_id"] = draft.parent_issue_id
         if draft.assigned_to_id:
             issue["assigned_to_id"] = draft.assigned_to_id
         if draft.status_id:
@@ -44,7 +46,12 @@ class RedmineService:
         if draft.custom_fields:
             issue["custom_fields"] = draft.custom_fields
 
-        response = self._post("/issues.json", {"issue": issue}, "Redmine create issue failed")
+        try:
+            response = self._post("/issues.json", {"issue": issue}, "Redmine create issue failed")
+        except RuntimeError as exc:
+            if "Ai score" not in str(exc) or not issue.pop("custom_fields", None):
+                raise
+            response = self._post("/issues.json", {"issue": issue}, "Redmine create issue failed")
 
         data = response.json()
         created_issue = data.get("issue")
