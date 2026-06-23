@@ -4,8 +4,8 @@ import argparse
 import subprocess
 import sys
 
-from .config import ConfigError, env_float, env_int, env_str, load_dotenv
-from .controllers.import_controller import ImportOptions, import_issues
+from .importer import ImportOptions, import_issues
+from .redmine import ConfigError, env_float, env_int, env_str, load_dotenv
 
 
 def positive_int(value: str) -> int:

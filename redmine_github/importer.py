@@ -1,19 +1,39 @@
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass
+from typing import Any
 
-from redmine_github.config import ConfigError, load_redmine_config
-from redmine_github.models import Commit, IssueDraft
-from redmine_github.services.git_service import read_commits
-from redmine_github.views.cli_view import (
-    print_created,
-    print_dry_run,
-    print_no_commits,
-    print_skipped_existing,
-    print_skipped_time_entry,
-)
+from redmine_github.redmine import ConfigError, RedmineClient, load_redmine_config
 
 ESTIMATED_HOURS_MULTIPLIER = 2.0
+
+
+@dataclass(frozen=True)
+class Commit:
+    short_sha: str
+    sha: str
+    date: str
+    subject: str
+    body: str
+    files_changed: int = 0
+    lines_changed: int = 0
+    paths: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class IssueDraft:
+    subject: str
+    description: str
+    note: str = ""
+    parent_issue_id: int | None = None
+    assigned_to_id: int | None = None
+    status_id: int | None = None
+    done_ratio: int | None = None
+    estimated_hours: float | None = None
+    spent_hours: float | None = None
+    ai_score: float | None = None
+    custom_fields: list[dict[str, object]] | None = None
 
 
 @dataclass(frozen=True)
@@ -35,6 +55,69 @@ class ImportOptions:
     ai_score_field_id: int | None
     prefix: str
     post: bool
+
+
+def commit_stats(repo: str, sha: str) -> tuple[int, int, tuple[str, ...]]:
+    output = subprocess.check_output(["git", "-C", repo, "show", "--numstat", "--format=", sha], text=True)
+    paths: list[str] = []
+    lines_changed = 0
+    for line in output.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
+        added, deleted, path = parts[0], parts[1], parts[2]
+        paths.append(path)
+        if added.isdigit():
+            lines_changed += int(added)
+        if deleted.isdigit():
+            lines_changed += int(deleted)
+    return len(paths), lines_changed, tuple(paths)
+
+
+def read_commits(repo: str, since: str = "", until: str = "", limit: int = 0, author: str = "") -> list[Commit]:
+    command = [
+        "git",
+        "-C",
+        repo,
+        "log",
+        "--reverse",
+        "--date=short",
+        "--pretty=format:%h%x1f%H%x1f%ad%x1f%s%x1f%b%x1e",
+    ]
+    if limit:
+        command.insert(4, f"-n{limit}")
+    if since:
+        command.append(f"--since={since}")
+    if until:
+        command.append(f"--until={until}")
+    if author:
+        command.append(f"--author={author}")
+
+    output = subprocess.check_output(command, text=True).strip("\x1e\n")
+    commits: list[Commit] = []
+    for record in output.split("\x1e"):
+        if not record.strip():
+            continue
+        short_sha, sha, date, subject, body = (record.strip("\n").split("\x1f", 4) + [""])[:5]
+        files_changed, lines_changed, paths = commit_stats(repo, sha)
+        commits.append(Commit(short_sha, sha, date, subject.strip(), body.strip(), files_changed, lines_changed, paths))
+    return commits
+
+
+def format_hours(value: float | None) -> str:
+    if value is None:
+        return "-"
+    rounded = round(value, 2)
+    if rounded.is_integer():
+        return str(int(rounded))
+    return f"{rounded:.2f}".rstrip("0").rstrip(".")
+
+
+def draft_summary(draft: IssueDraft) -> str:
+    estimated = format_hours(draft.estimated_hours)
+    ai = format_hours(draft.ai_score)
+    spent = format_hours(draft.spent_hours)
+    return f"estimated={estimated}h ai={ai if ai == '-' else ai + 'h'} spent={spent}h"
 
 
 def estimate_hours(commit: Commit) -> float:
@@ -88,13 +171,6 @@ def score_commit(commit: Commit) -> int:
     return min(score, 50)
 
 
-def format_hours(value: float) -> str:
-    rounded = round(value, 2)
-    if rounded.is_integer():
-        return str(int(rounded))
-    return f"{rounded:.2f}".rstrip("0").rstrip(".")
-
-
 def estimate_ai_hours(estimated_hours: float, ai_percent: int) -> float | None:
     if estimated_hours <= 1:
         return None
@@ -126,13 +202,7 @@ def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
         subject=f"{options.prefix}{commit.subject}"[:255],
         description="\n".join(
             part
-            for part in [
-                f"Git commit: {commit.sha}",
-                f"Commit date: {commit.date}",
-                ai_score_line,
-                "",
-                commit.body,
-            ]
+            for part in [f"Git commit: {commit.sha}", f"Commit date: {commit.date}", ai_score_line, "", commit.body]
             if part
         ),
         note=commit.body,
@@ -151,6 +221,10 @@ def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
     )
 
 
+def print_created(prefix: str, issue: dict[str, Any], draft: IssueDraft) -> None:
+    print(f"{prefix} #{issue.get('id')}: {draft.subject} ({draft_summary(draft)})")
+
+
 def import_issues(options: ImportOptions) -> int:
     if not options.project_id:
         raise ConfigError("Missing --project-id or REDMINE_PROJECT_ID")
@@ -159,32 +233,33 @@ def import_issues(options: ImportOptions) -> int:
 
     commits = read_commits(options.repo, options.since, options.until, options.limit, options.author)
     if not commits:
-        print_no_commits()
+        print("No commits found.")
         return 0
 
     redmine = None
     if options.post:
-        from redmine_github.services.redmine_service import RedmineService
-
-        redmine = RedmineService(load_redmine_config())
+        redmine = RedmineClient(load_redmine_config())
         if options.assigned_to_id is None:
             options = ImportOptions(**{**options.__dict__, "assigned_to_id": redmine.current_user_id()})
         if options.status_id is None:
             options = ImportOptions(**{**options.__dict__, "status_id": redmine.closed_status_id()})
+
     for commit in commits:
         draft = draft_from_commit(commit, options)
         if not options.post:
-            print_dry_run(draft)
+            print(f"DRY RUN: {draft.subject} ({draft_summary(draft)})")
             continue
+
         assert redmine is not None
         existing_issue = redmine.find_issue_by_commit(options.project_id, commit.sha)
         if existing_issue:
-            print_skipped_existing(existing_issue, draft)
+            print_created("skipped existing", existing_issue, draft)
             continue
+
         issue = redmine.create_issue(options.project_id, draft, options.tracker_id)
         if draft.spent_hours and options.activity_id:
             if draft.spent_hours < 0.5:
-                print_skipped_time_entry(issue, "hours below Redmine minimum 0.5")
+                print(f"skipped time entry #{issue.get('id')}: hours below Redmine minimum 0.5")
             else:
                 try:
                     redmine.create_time_entry(
@@ -195,12 +270,7 @@ def import_issues(options: ImportOptions) -> int:
                         comments=draft.subject,
                     )
                 except RuntimeError as exc:
-                    print_skipped_time_entry(issue, str(exc))
-        redmine.update_issue(
-            issue_id=int(issue["id"]),
-            status_id=draft.status_id,
-            done_ratio=draft.done_ratio,
-            notes=draft.note,
-        )
-        print_created(issue, draft)
+                    print(f"skipped time entry #{issue.get('id')}: {exc}")
+        redmine.update_issue(int(issue["id"]), status_id=draft.status_id, done_ratio=draft.done_ratio, notes=draft.note)
+        print_created("created", issue, draft)
     return 0

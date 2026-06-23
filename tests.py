@@ -2,19 +2,18 @@ from copy import deepcopy
 from contextlib import redirect_stdout
 from io import StringIO
 
-from redmine_github.controllers.import_controller import (
+from redmine_github.importer import (
+    Commit,
     ImportOptions,
+    IssueDraft,
     draft_from_commit,
+    draft_summary,
     estimate_ai_hours,
     estimate_hours,
     estimate_spent_hours,
+    print_created,
 )
-from redmine_github.models import Commit
-from redmine_github.models import IssueDraft
-from redmine_github.services.redmine_service import RedmineService
-from redmine_github.views.cli_view import draft_summary
-from redmine_github.views.cli_view import print_skipped_existing
-from redmine_github.views.cli_view import print_skipped_time_entry
+from redmine_github.redmine import RedmineClient
 
 
 class FakeResponse:
@@ -22,7 +21,7 @@ class FakeResponse:
         return {"issue": {"id": 123}}
 
 
-class FakeRedmineService(RedmineService):
+class FakeRedmineClient(RedmineClient):
     def __init__(self) -> None:
         self.payloads = []
 
@@ -124,17 +123,17 @@ def test_skip_message() -> None:
     )
     output = StringIO()
     with redirect_stdout(output):
-        print_skipped_existing({"id": 123}, draft)
+        print_created("skipped existing", {"id": 123}, draft)
     assert output.getvalue().strip() == "skipped existing #123: [git] Add thing (estimated=6h ai=2h spent=3.5h)"
 
     output = StringIO()
     with redirect_stdout(output):
-        print_skipped_time_entry({"id": 123}, "hours below Redmine minimum 0.5")
+        print("skipped time entry #123: hours below Redmine minimum 0.5")
     assert output.getvalue().strip() == "skipped time entry #123: hours below Redmine minimum 0.5"
 
 
 def test_create_issue_retries_without_invalid_ai_score() -> None:
-    redmine = FakeRedmineService()
+    redmine = FakeRedmineClient()
     issue = redmine.create_issue(
         16,
         IssueDraft("subject", "description", custom_fields=[{"id": 14, "value": "99"}]),
