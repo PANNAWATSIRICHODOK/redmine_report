@@ -16,6 +16,7 @@ from redmine_github.importer import (
 )
 from redmine_github.redmine import RedmineClient
 from automation import scheduled_date
+import redmine_github.importer as importer_module
 
 
 class FakeResponse:
@@ -107,6 +108,17 @@ def test_spent_hours_meet_daily_manday_minimum() -> None:
     assert ensure_minimum_spent_by_commit_day([Commit("d", "d", "2026-06-23", "D", "")], [0.5]) == [8.0]
 
 
+def test_commit_gaps_weight_one_daily_manday() -> None:
+    commits = [
+        Commit("a", "a", "2026-06-21", "A", "", timestamp="2026-06-21T09:00:00+07:00"),
+        Commit("b", "b", "2026-06-21", "B", "", timestamp="2026-06-21T10:00:00+07:00"),
+        Commit("c", "c", "2026-06-21", "C", "", timestamp="2026-06-21T15:00:00+07:00"),
+    ]
+    allocated = ensure_minimum_spent_by_commit_day(commits, [1.0, 1.0, 6.0])
+    assert allocated == [2.0, 3.0, 3.0]
+    assert sum(allocated) == 8.0
+
+
 def test_estimate_hours_keyword_range() -> None:
     assert estimate_hours(Commit("", "", "", "docs typo", "")) == 2.0
     assert estimate_hours(Commit("", "", "", "init", "")) == 4.0
@@ -182,14 +194,49 @@ def test_scheduled_date_moves_weekends_to_friday() -> None:
     assert scheduled_date(2027, 2).isoformat() == "2027-02-26"
 
 
+def test_post_defaults_reach_created_draft() -> None:
+    class FakeImportRedmine:
+        draft = None
+
+        def __init__(self, _config): pass
+        def current_user_id(self): return 28
+        def closed_status_id(self): return 5
+        def find_issue_by_commit(self, _project_id, _sha): return None
+        def create_issue(self, _project_id, draft, _tracker_id):
+            FakeImportRedmine.draft = draft
+            return {"id": 123}
+        def create_time_entry(self, **_kwargs): pass
+        def update_issue(self, *_args, **_kwargs): pass
+
+    original_client = importer_module.RedmineClient
+    original_config = importer_module.load_redmine_config
+    original_commits = importer_module.read_commits
+    try:
+        importer_module.RedmineClient = FakeImportRedmine
+        importer_module.load_redmine_config = lambda: object()
+        importer_module.read_commits = lambda *_args, **_kwargs: [Commit("a", "a", "2026-01-01", "Feature", "")]
+        with redirect_stdout(StringIO()):
+            importer_module.import_issues(
+                ImportOptions(".", "", "", 0, "", 17, 2, None, None, None, 100, None, None, 9, None, "[git] ", True, 2, True)
+            )
+    finally:
+        importer_module.RedmineClient = original_client
+        importer_module.load_redmine_config = original_config
+        importer_module.read_commits = original_commits
+    assert FakeImportRedmine.draft.assigned_to_id == 28
+    assert FakeImportRedmine.draft.status_id == 5
+
+
 if __name__ == "__main__":
     test_issue_fields()
     test_estimate_spent_hours_stays_below_estimate()
     test_spent_hours_meet_daily_manday_minimum()
+    test_commit_gaps_weight_one_daily_manday()
     test_estimate_hours_keyword_range()
     test_low_estimate_still_meets_time_buffer()
     test_standalone_feature_has_no_parent()
     test_skip_message()
     test_create_issue_retries_without_invalid_ai_score()
     test_scheduled_date_moves_weekends_to_friday()
+    test_post_defaults_reach_created_draft()
     print("ok")

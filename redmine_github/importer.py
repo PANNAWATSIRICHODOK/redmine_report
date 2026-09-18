@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from math import floor
+from math import ceil, floor
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -12,6 +12,7 @@ from redmine_github.redmine import ConfigError, RedmineClient, load_redmine_conf
 ESTIMATED_HOURS_MULTIPLIER = 2.0
 ESTIMATED_HOURS_BUFFER = 1.5
 MANDAY_HOURS = 8
+MAX_COMMIT_GAP_HOURS = 3
 STANDALONE_PREFIX = "[standalone]"
 
 
@@ -25,6 +26,7 @@ class Commit:
     files_changed: int = 0
     lines_changed: int = 0
     paths: tuple[str, ...] = ()
+    timestamp: str = ""
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,7 @@ class ImportOptions:
     post: bool
     feature_tracker_id: int | None = None
     standalone: bool = False
+    spent_hours_by_sha: dict[str, float] | None = None
 
 
 def commit_stats(repo: str, sha: str) -> tuple[int, int, tuple[str, ...]]:
@@ -92,7 +95,7 @@ def read_commits(repo: str, since: str = "", until: str = "", limit: int = 0, au
         "log",
         "--reverse",
         "--date=short",
-        "--pretty=format:%h%x1f%H%x1f%ad%x1f%s%x1f%b%x1e",
+        "--pretty=format:%h%x1f%H%x1f%ad%x1f%s%x1f%b%x1f%aI%x1e",
     ]
     if limit:
         command.insert(4, f"-n{limit}")
@@ -108,9 +111,9 @@ def read_commits(repo: str, since: str = "", until: str = "", limit: int = 0, au
     for record in output.split("\x1e"):
         if not record.strip():
             continue
-        short_sha, sha, date, subject, body = (record.strip("\n").split("\x1f", 4) + [""])[:5]
+        short_sha, sha, date, subject, body, timestamp = (record.strip("\n").split("\x1f", 5) + [""])[:6]
         files_changed, lines_changed, paths = commit_stats(repo, sha)
-        commits.append(Commit(short_sha, sha, date, subject.strip(), body.strip(), files_changed, lines_changed, paths))
+        commits.append(Commit(short_sha, sha, date, subject.strip(), body.strip(), files_changed, lines_changed, paths, timestamp))
     return commits
 
 
@@ -199,18 +202,31 @@ def estimate_spent_hours(estimated_hours: float) -> float:
 
 def ensure_minimum_spent_by_commit_day(commits: list[Commit], proposed_hours: list[float]) -> list[float]:
     allocated = [0.0] * len(commits)
-    units_per_day = MANDAY_HOURS * 2
     for day in {commit.date for commit in commits}:
         indexes = [index for index, commit in enumerate(commits) if commit.date == day]
-        total = sum(proposed_hours[index] for index in indexes)
-        if total >= MANDAY_HOURS:
-            for index in indexes:
-                allocated[index] = proposed_hours[index]
-            continue
-        raw_units = {index: proposed_hours[index] / total * units_per_day for index in indexes}
-        units = {index: floor(raw_units[index]) for index in indexes}
+        timed = all(commits[index].timestamp for index in indexes)
+        if timed:
+            indexes.sort(key=lambda index: commits[index].timestamp)
+            durations = [0.5]
+            for previous, current in zip(indexes, indexes[1:]):
+                gap = (datetime.fromisoformat(commits[current].timestamp) - datetime.fromisoformat(commits[previous].timestamp)).total_seconds() / 3600
+                durations.append(gap if 0 < gap <= MAX_COMMIT_GAP_HOURS else 0.5)
+            total = max(MANDAY_HOURS, sum(durations))
+            weights = {
+                index: duration * (0.5 + min(proposed_hours[index], MANDAY_HOURS) / MANDAY_HOURS)
+                for index, duration in zip(indexes, durations)
+            }
+        else:
+            total = max(MANDAY_HOURS, sum(proposed_hours[index] for index in indexes))
+            weights = {index: proposed_hours[index] for index in indexes}
+
+        units_per_day = max(ceil(total * 2), len(indexes))
+        extra_units = units_per_day - len(indexes)
+        weight_total = sum(weights.values())
+        raw_units = {index: weights[index] / weight_total * extra_units for index in indexes}
+        units = {index: 1 + floor(raw_units[index]) for index in indexes}
         remaining = units_per_day - sum(units.values())
-        for index in sorted(indexes, key=lambda item: raw_units[item] - units[item], reverse=True)[:remaining]:
+        for index in sorted(indexes, key=lambda item: raw_units[item] - floor(raw_units[item]), reverse=True)[:remaining]:
             units[index] += 1
         for index in indexes:
             allocated[index] = units[index] / 2
@@ -277,6 +293,14 @@ def import_issues(options: ImportOptions) -> int:
     if options.post and not options.activity_id:
         raise ConfigError("Missing --activity-id or REDMINE_ACTIVITY_ID for spent time")
 
+    redmine = None
+    if options.post:
+        redmine = RedmineClient(load_redmine_config())
+        if options.assigned_to_id is None:
+            options = replace(options, assigned_to_id=redmine.current_user_id())
+        if options.status_id is None:
+            options = replace(options, status_id=redmine.closed_status_id())
+
     commits = read_commits(options.repo, options.since, options.until, options.limit, options.author)
     if not commits:
         print("No commits found.")
@@ -286,18 +310,15 @@ def import_issues(options: ImportOptions) -> int:
         options.spent_hours if options.spent_hours is not None else estimate_spent_hours(options.estimated_hours or estimate_hours(commit))
         for commit in commits
     ]
+    allocated_hours = (
+        [options.spent_hours_by_sha[commit.sha] for commit in commits]
+        if options.spent_hours_by_sha is not None
+        else ensure_minimum_spent_by_commit_day(commits, proposed_hours)
+    )
     drafts = [
         draft_from_commit(commit, replace(options, spent_hours=spent, estimated_hours=spent + ESTIMATED_HOURS_BUFFER))
-        for commit, spent in zip(commits, ensure_minimum_spent_by_commit_day(commits, proposed_hours))
+        for commit, spent in zip(commits, allocated_hours)
     ]
-
-    redmine = None
-    if options.post:
-        redmine = RedmineClient(load_redmine_config())
-        if options.assigned_to_id is None:
-            options = ImportOptions(**{**options.__dict__, "assigned_to_id": redmine.current_user_id()})
-        if options.status_id is None:
-            options = ImportOptions(**{**options.__dict__, "status_id": redmine.closed_status_id()})
 
     for commit, draft in zip(commits, drafts):
         if not options.post:

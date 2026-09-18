@@ -166,6 +166,12 @@ class RedmineClient:
             raise RuntimeError("Redmine response did not include current user id")
         return int(user["id"])
 
+    def issue(self, issue_id: int) -> dict[str, Any]:
+        issue = self._get(f"/issues/{issue_id}.json", "Redmine issue failed").json().get("issue")
+        if not isinstance(issue, dict):
+            raise RuntimeError("Redmine response did not include issue details")
+        return issue
+
     def closed_status_id(self) -> int:
         statuses = self._get("/issue_statuses.json", "Redmine issue statuses failed").json().get("issue_statuses", [])
         for status in statuses:

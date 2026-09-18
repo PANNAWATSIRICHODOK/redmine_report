@@ -70,7 +70,7 @@ python3 tests.py
 
 ## Automation บน macOS
 
-`automation.py` สแกน Git repositories ใต้ `GIT_SCAN_ROOT`, ตรวจ commit ซ้ำ และจับคู่ Project ด้วย Git remote URL ถ้าไม่พบจะสร้าง Project ใหม่เมื่อใช้ `--post`
+`automation.py` สแกน Git repositories ใต้ `GIT_SCAN_ROOT`, รวม commit ทุก repository ตามวัน, ใช้ช่วงห่างของ commit ไม่เกิน 3 ชั่วโมงร่วมกับขนาดงานเพื่อกระจายเวลาอย่างน้อย 8 ชั่วโมงต่อวัน แล้วตรวจ commit ซ้ำและจับคู่ Project ด้วย Git remote URL ถ้าไม่พบจะสร้าง Project ใหม่เมื่อใช้ `--post`
 
 ```bash
 .venv/bin/python automation.py --force --limit 1

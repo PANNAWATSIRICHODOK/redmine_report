@@ -10,7 +10,14 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from redmine_github.importer import ImportOptions, import_issues
+from redmine_github.importer import (
+    ImportOptions,
+    ensure_minimum_spent_by_commit_day,
+    estimate_hours,
+    estimate_spent_hours,
+    import_issues,
+    read_commits,
+)
 from redmine_github.redmine import RedmineClient, env_int, env_str, load_dotenv, load_redmine_config
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -81,7 +88,7 @@ def unique_identifier(name: str, projects: list[dict]) -> str:
     return identifier
 
 
-def options(repo: Path, project_id: int, standalone: bool, post: bool, limit: int) -> ImportOptions:
+def options(repo: Path, project_id: int, standalone: bool, post: bool, limit: int, spent_by_sha: dict[str, float]) -> ImportOptions:
     prefix = env_str("REDMINE_ISSUE_PREFIX", "[git] ")
     return ImportOptions(
         repo=str(repo),
@@ -103,6 +110,7 @@ def options(repo: Path, project_id: int, standalone: bool, post: bool, limit: in
         post=post,
         feature_tracker_id=env_int("REDMINE_FEATURE_TRACKER_ID", 2),
         standalone=standalone,
+        spent_hours_by_sha=spent_by_sha,
     )
 
 
@@ -120,20 +128,38 @@ def run(post: bool, force: bool, limit: int) -> int:
     configured_path = env_str("GIT_REPO_PATH")
     configured_repo = Path(configured_path).expanduser() if configured_path else None
     configured_project_id = env_int("REDMINE_PROJECT_ID")
+    parent_issue_id = env_int("REDMINE_PARENT_ISSUE_ID")
     feature_tracker_id = env_int("REDMINE_FEATURE_TRACKER_ID", 2)
     redmine = RedmineClient(load_redmine_config())
     projects = redmine.projects()
     failures: list[str] = []
     processed = 0
+    repo_list = repositories(root)
+    commits = [
+        commit
+        for repo in repo_list
+        for commit in read_commits(repo, env_str("GIT_SINCE"), env_str("GIT_UNTIL"), limit, env_str("GIT_AUTHOR"))
+    ]
+    proposed = [estimate_spent_hours(estimate_hours(commit)) for commit in commits]
+    allocated = ensure_minimum_spent_by_commit_day(commits, proposed)
+    spent_by_sha = {commit.sha: spent for commit, spent in zip(commits, allocated)}
+    for day in sorted({commit.date for commit in commits}):
+        daily = [(commit, spent_by_sha[commit.sha]) for commit in commits if commit.date == day]
+        print(f"day {day}: {len(daily)} commits, {sum(spent for _, spent in daily):g}h", flush=True)
 
-    for repo in repositories(root):
+    for repo in repo_list:
         remote = git_remote(repo)
         project = project_for_repo(repo, remote, projects, configured_repo, configured_project_id)
         standalone = not project or int(project.get("id", 0)) != configured_project_id
+        if not standalone and parent_issue_id:
+            parent = redmine.issue(parent_issue_id)
+            standalone = int(parent.get("status", {}).get("id", 0)) == redmine.closed_status_id()
+            if standalone:
+                print(f"parent #{parent_issue_id} is closed; using Standalone Feature", flush=True)
         try:
             project_id = int(project["id"]) if project else 1
             print(f"repository {repo.name} -> {'project #' + str(project_id) if project else 'NEW project'}", flush=True)
-            import_issues(options(repo, project_id, standalone, False, limit))
+            import_issues(options(repo, project_id, standalone, False, limit, spent_by_sha))
             if post and not project:
                 project = redmine.create_project(
                     repo.name,
@@ -145,7 +171,7 @@ def run(post: bool, force: bool, limit: int) -> int:
                 project_id = int(project["id"])
                 print(f"created project #{project_id}: {repo.name}")
             if post:
-                import_issues(options(repo, project_id, standalone, True, limit))
+                import_issues(options(repo, project_id, standalone, True, limit, spent_by_sha))
             processed += 1
         except Exception as exc:  # keep other repositories running
             failures.append(f"{repo.name}: {exc}")
