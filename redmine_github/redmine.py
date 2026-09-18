@@ -78,7 +78,13 @@ class RedmineClient:
         self.base_url = config.base_url
         self.verify_ssl = config.verify_ssl
         self.session = requests.Session()
-        self.session.headers.update({"Accept": "application/json", "X-Redmine-API-Key": config.api_key})
+        self.session.headers.update(
+            {
+                "Accept": "application/json",
+                "X-Redmine-API-Key": config.api_key,
+                "User-Agent": "Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36",
+            }
+        )
 
     def create_issue(self, project_id: int, draft: Any, tracker_id: int | None = None) -> dict[str, Any]:
         issue: dict[str, Any] = {"project_id": project_id, "subject": draft.subject, "description": draft.description}
@@ -89,6 +95,7 @@ class RedmineClient:
             "status_id": draft.status_id,
             "done_ratio": draft.done_ratio,
             "estimated_hours": draft.estimated_hours,
+            "due_date": draft.due_date,
             "custom_fields": draft.custom_fields,
         }
         issue.update({key: value for key, value in optional_fields.items() if value is not None})
@@ -104,6 +111,30 @@ class RedmineClient:
         if not isinstance(created_issue, dict):
             raise RuntimeError("Redmine response did not include issue details")
         return created_issue
+
+    def projects(self) -> list[dict[str, Any]]:
+        projects = self._get_json("/projects.json", {"limit": 100}, "Redmine projects failed").get("projects", [])
+        return [project for project in projects if isinstance(project, dict)]
+
+    def create_project(self, name: str, identifier: str, description: str, tracker_id: int) -> dict[str, Any]:
+        response = self._post(
+            "/projects.json",
+            {
+                "project": {
+                    "name": name,
+                    "identifier": identifier,
+                    "description": description,
+                    "is_public": False,
+                    "tracker_ids": [tracker_id],
+                    "enabled_module_names": ["issue_tracking", "time_tracking"],
+                }
+            },
+            "Redmine create project failed",
+        )
+        project = response.json().get("project")
+        if not isinstance(project, dict) or not project.get("id"):
+            raise RuntimeError("Redmine response did not include project details")
+        return project
 
     def create_time_entry(self, issue_id: int, hours: float, activity_id: int, spent_on: str, comments: str) -> None:
         self._post(

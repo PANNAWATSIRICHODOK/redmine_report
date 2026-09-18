@@ -31,13 +31,14 @@ def positive_float(value: str) -> float:
 def parser() -> argparse.ArgumentParser:
     load_dotenv()
     cli = argparse.ArgumentParser(description="Create Redmine issues from git commits.")
-    cli.add_argument("--repo", default=".", help="git repo path")
+    cli.add_argument("--repo", default=env_str("GIT_REPO_PATH", "."), help="git repo path")
     cli.add_argument("--since", default="", help="git log --since value, e.g. 2026-06-01")
     cli.add_argument("--until", default="", help="git log --until value, e.g. 2026-06-22")
     cli.add_argument("--author", default=env_str("GIT_AUTHOR"), help="git log --author value")
     cli.add_argument("--limit", type=int, default=0, help="max commits to read")
     cli.add_argument("--project-id", type=positive_int, default=env_int("REDMINE_PROJECT_ID"))
     cli.add_argument("--tracker-id", type=positive_int, default=env_int("REDMINE_TRACKER_ID") or None)
+    cli.add_argument("--feature-tracker-id", type=positive_int, default=env_int("REDMINE_FEATURE_TRACKER_ID", 2))
     cli.add_argument("--parent-issue-id", type=positive_int, default=env_int("REDMINE_PARENT_ISSUE_ID") or None)
     cli.add_argument("--assigned-to-id", type=positive_int, default=env_int("REDMINE_ASSIGNED_TO_ID") or None)
     cli.add_argument("--status-id", type=positive_int, default=env_int("REDMINE_STATUS_ID") or None)
@@ -47,6 +48,7 @@ def parser() -> argparse.ArgumentParser:
     cli.add_argument("--activity-id", type=positive_int, default=env_int("REDMINE_ACTIVITY_ID") or None)
     cli.add_argument("--ai-score-field-id", type=positive_int, default=env_int("REDMINE_AI_SCORE_FIELD_ID") or None)
     cli.add_argument("--prefix", default=env_str("REDMINE_ISSUE_PREFIX", "[git] "), help="issue subject prefix")
+    cli.add_argument("--standalone", action="store_true", help="create all commits as standalone features without a parent")
     cli.add_argument("--post", action="store_true", help="actually create issues; default is dry-run")
     return cli
 
@@ -73,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
             ai_score_field_id=args.ai_score_field_id,
             prefix=prefix,
             post=args.post,
+            feature_tracker_id=args.feature_tracker_id,
+            standalone=args.standalone,
         )
     )
 

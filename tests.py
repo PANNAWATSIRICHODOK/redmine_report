@@ -6,6 +6,7 @@ from redmine_github.importer import (
     Commit,
     ImportOptions,
     IssueDraft,
+    ensure_minimum_spent_by_commit_day,
     draft_from_commit,
     draft_summary,
     estimate_ai_hours,
@@ -14,6 +15,7 @@ from redmine_github.importer import (
     print_created,
 )
 from redmine_github.redmine import RedmineClient
+from automation import scheduled_date
 
 
 class FakeResponse:
@@ -78,7 +80,7 @@ def test_issue_fields() -> None:
     assert draft.ai_score == 1.0
     assert "AI Score: 1 hours (35%)" in draft.description
     assert draft.custom_fields == [{"id": 12, "value": "1"}]
-    assert draft_summary(draft) == "estimated=2.5h ai=1h spent=1h"
+    assert draft_summary(draft) == "estimated=2.5h (0.31 mandays) ai=1h spent=1h"
 
 
 def test_estimate_spent_hours_stays_below_estimate() -> None:
@@ -86,10 +88,23 @@ def test_estimate_spent_hours_stays_below_estimate() -> None:
     assert estimate_ai_hours(2.0, 25) == 1.0
     assert estimate_ai_hours(2.5, 50) == 1.0
     assert estimate_ai_hours(4.0, 50) == 2.0
-    assert estimate_spent_hours(1.0, None) == 0.5
-    assert estimate_spent_hours(2.0, 1.0) == 0.5
-    assert estimate_spent_hours(2.5, 1.0) == 1.0
-    assert estimate_spent_hours(4.0, 2.0) == 1.5
+    assert estimate_spent_hours(1.0) == 0.5
+    assert estimate_spent_hours(2.0) == 0.5
+    assert estimate_spent_hours(2.5) == 1.0
+    assert estimate_spent_hours(4.0) == 2.5
+
+
+def test_spent_hours_meet_daily_manday_minimum() -> None:
+    commits = [
+        Commit("a", "a", "2026-06-21", "A", ""),
+        Commit("b", "b", "2026-06-21", "B", ""),
+        Commit("c", "c", "2026-06-22", "C", ""),
+    ]
+    allocated = ensure_minimum_spent_by_commit_day(commits, [10.0, 10.0, 20.0])
+    assert allocated == [10.0, 10.0, 20.0]
+    assert sum(allocated) == 40.0
+    assert ensure_minimum_spent_by_commit_day(commits[:2], [1.0, 1.0]) == [4.0, 4.0]
+    assert ensure_minimum_spent_by_commit_day([Commit("d", "d", "2026-06-23", "D", "")], [0.5]) == [8.0]
 
 
 def test_estimate_hours_keyword_range() -> None:
@@ -105,15 +120,32 @@ def test_estimate_hours_keyword_range() -> None:
     assert estimate_hours(Commit("", "", "", "architecture migration multi-day", "body", 20, 2000, ("auth/db/migration.sql",))) == 50.0
 
 
-def test_ai_score_is_omitted_when_it_cannot_be_below_estimate() -> None:
+def test_low_estimate_still_meets_time_buffer() -> None:
     draft = draft_from_commit(
         Commit("abc1234", "abc123456789", "2026-06-22", "Tiny task", ""),
         ImportOptions(".", "", "", 0, "", 17, 3, None, None, None, None, 1.0, None, 9, 12, "[git] ", False),
     )
-    assert draft.estimated_hours == 1.0
-    assert draft.ai_score is None
-    assert draft.custom_fields is None
-    assert "AI Score: omitted" in draft.description
+    assert draft.estimated_hours == 2.0
+    assert draft.spent_hours == 0.5
+    assert draft.ai_score == 1.0
+    assert draft.custom_fields == [{"id": 12, "value": "1"}]
+
+
+def test_standalone_feature_has_no_parent() -> None:
+    draft = draft_from_commit(
+        Commit("abc1234", "abc123456789", "2026-06-22", "[standalone] Add export", ""),
+        ImportOptions(".", "", "", 0, "", 17, 3, 4184, None, None, None, None, None, 9, 12, "[git] ", False, 2),
+    )
+    assert draft.subject == "[git] Add export"
+    assert draft.parent_issue_id is None
+    assert draft.tracker_id == 2
+
+    unmarked = draft_from_commit(
+        Commit("def5678", "def567890123", "2026-06-22", "Add dashboard", ""),
+        ImportOptions(".", "", "", 0, "", 17, 3, 4184, None, None, None, None, None, 9, 12, "[git] ", False, 2, True),
+    )
+    assert unmarked.parent_issue_id is None
+    assert unmarked.tracker_id == 2
 
 
 def test_skip_message() -> None:
@@ -124,7 +156,7 @@ def test_skip_message() -> None:
     output = StringIO()
     with redirect_stdout(output):
         print_created("skipped existing", {"id": 123}, draft)
-    assert output.getvalue().strip() == "skipped existing #123: [git] Add thing (estimated=6h ai=2h spent=3.5h)"
+    assert output.getvalue().strip() == "skipped existing #123: [git] Add thing (estimated=6h (0.75 mandays) ai=2h spent=4.5h)"
 
     output = StringIO()
     with redirect_stdout(output):
@@ -144,11 +176,20 @@ def test_create_issue_retries_without_invalid_ai_score() -> None:
     assert "custom_fields" not in redmine.payloads[1]["issue"]
 
 
+def test_scheduled_date_moves_weekends_to_friday() -> None:
+    assert scheduled_date(2026, 8).isoformat() == "2026-08-28"
+    assert scheduled_date(2026, 11).isoformat() == "2026-11-27"
+    assert scheduled_date(2027, 2).isoformat() == "2027-02-26"
+
+
 if __name__ == "__main__":
     test_issue_fields()
     test_estimate_spent_hours_stays_below_estimate()
+    test_spent_hours_meet_daily_manday_minimum()
     test_estimate_hours_keyword_range()
-    test_ai_score_is_omitted_when_it_cannot_be_below_estimate()
+    test_low_estimate_still_meets_time_buffer()
+    test_standalone_feature_has_no_parent()
     test_skip_message()
     test_create_issue_retries_without_invalid_ai_score()
+    test_scheduled_date_moves_weekends_to_friday()
     print("ok")

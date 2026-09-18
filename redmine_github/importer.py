@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
+from math import floor
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from redmine_github.redmine import ConfigError, RedmineClient, load_redmine_config
 
 ESTIMATED_HOURS_MULTIPLIER = 2.0
+ESTIMATED_HOURS_BUFFER = 1.5
+MANDAY_HOURS = 8
+STANDALONE_PREFIX = "[standalone]"
 
 
 @dataclass(frozen=True)
@@ -34,6 +40,8 @@ class IssueDraft:
     spent_hours: float | None = None
     ai_score: float | None = None
     custom_fields: list[dict[str, object]] | None = None
+    due_date: str | None = None
+    tracker_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -55,6 +63,8 @@ class ImportOptions:
     ai_score_field_id: int | None
     prefix: str
     post: bool
+    feature_tracker_id: int | None = None
+    standalone: bool = False
 
 
 def commit_stats(repo: str, sha: str) -> tuple[int, int, tuple[str, ...]]:
@@ -117,7 +127,8 @@ def draft_summary(draft: IssueDraft) -> str:
     estimated = format_hours(draft.estimated_hours)
     ai = format_hours(draft.ai_score)
     spent = format_hours(draft.spent_hours)
-    return f"estimated={estimated}h ai={ai if ai == '-' else ai + 'h'} spent={spent}h"
+    mandays = format_hours((draft.estimated_hours or 0) / MANDAY_HOURS)
+    return f"estimated={estimated}h ({mandays} mandays) ai={ai if ai == '-' else ai + 'h'} spent={spent}h"
 
 
 def estimate_hours(commit: Commit) -> float:
@@ -182,31 +193,64 @@ def estimate_ai_hours(estimated_hours: float, ai_percent: int) -> float | None:
     return ai_hours if ai_hours < estimated_hours else None
 
 
-def estimate_spent_hours(estimated_hours: float, ai_hours: float | None) -> float:
-    buffer_hours = max(0.5, round(estimated_hours * 0.1 * 4) / 4)
-    available_hours = estimated_hours - (ai_hours or 0) - buffer_hours
-    return max(0.0, round(available_hours, 2))
+def estimate_spent_hours(estimated_hours: float) -> float:
+    return max(0.5, round(estimated_hours - ESTIMATED_HOURS_BUFFER, 2))
+
+
+def ensure_minimum_spent_by_commit_day(commits: list[Commit], proposed_hours: list[float]) -> list[float]:
+    allocated = [0.0] * len(commits)
+    units_per_day = MANDAY_HOURS * 2
+    for day in {commit.date for commit in commits}:
+        indexes = [index for index, commit in enumerate(commits) if commit.date == day]
+        total = sum(proposed_hours[index] for index in indexes)
+        if total >= MANDAY_HOURS:
+            for index in indexes:
+                allocated[index] = proposed_hours[index]
+            continue
+        raw_units = {index: proposed_hours[index] / total * units_per_day for index in indexes}
+        units = {index: floor(raw_units[index]) for index in indexes}
+        remaining = units_per_day - sum(units.values())
+        for index in sorted(indexes, key=lambda item: raw_units[item] - units[item], reverse=True)[:remaining]:
+            units[index] += 1
+        for index in indexes:
+            allocated[index] = units[index] / 2
+    return allocated
+
+
+def next_bangkok_date() -> str:
+    return (datetime.now(ZoneInfo("Asia/Bangkok")).date() + timedelta(days=1)).isoformat()
 
 
 def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
+    marked_standalone = commit.subject.casefold().startswith(STANDALONE_PREFIX)
+    standalone = options.standalone or marked_standalone
+    subject = commit.subject[len(STANDALONE_PREFIX) :].lstrip(" :-") if marked_standalone else commit.subject
     ai_percent = score_commit(commit)
     estimated_hours = options.estimated_hours or estimate_hours(commit)
+    spent_hours = options.spent_hours if options.spent_hours is not None else estimate_spent_hours(estimated_hours)
+    estimated_hours = max(estimated_hours, spent_hours + ESTIMATED_HOURS_BUFFER)
     ai_hours = estimate_ai_hours(estimated_hours, ai_percent)
-    spent_hours = options.spent_hours or estimate_spent_hours(estimated_hours, ai_hours)
     ai_score_line = (
         f"AI Score: {format_hours(ai_hours)} hours ({ai_percent}%)"
         if ai_hours is not None
         else "AI Score: omitted because estimated hours is too low"
     )
     return IssueDraft(
-        subject=f"{options.prefix}{commit.subject}"[:255],
+        subject=f"{options.prefix}{subject}"[:255],
         description="\n".join(
             part
-            for part in [f"Git commit: {commit.sha}", f"Commit date: {commit.date}", ai_score_line, "", commit.body]
+            for part in [
+                f"Git commit: {commit.sha}",
+                f"Commit date: {commit.date}",
+                f"Estimated effort: {format_hours(estimated_hours / MANDAY_HOURS)} mandays ({MANDAY_HOURS}h/day)",
+                ai_score_line,
+                "",
+                commit.body,
+            ]
             if part
         ),
         note=commit.body,
-        parent_issue_id=options.parent_issue_id,
+        parent_issue_id=None if standalone else options.parent_issue_id,
         assigned_to_id=options.assigned_to_id,
         status_id=options.status_id,
         done_ratio=100 if options.done_ratio is None else options.done_ratio,
@@ -218,6 +262,8 @@ def draft_from_commit(commit: Commit, options: ImportOptions) -> IssueDraft:
             if options.ai_score_field_id and ai_hours is not None
             else None
         ),
+        due_date=next_bangkok_date(),
+        tracker_id=options.feature_tracker_id if standalone else options.tracker_id,
     )
 
 
@@ -228,13 +274,22 @@ def print_created(prefix: str, issue: dict[str, Any], draft: IssueDraft) -> None
 def import_issues(options: ImportOptions) -> int:
     if not options.project_id:
         raise ConfigError("Missing --project-id or REDMINE_PROJECT_ID")
-    if options.spent_hours and not options.activity_id:
+    if options.post and not options.activity_id:
         raise ConfigError("Missing --activity-id or REDMINE_ACTIVITY_ID for spent time")
 
     commits = read_commits(options.repo, options.since, options.until, options.limit, options.author)
     if not commits:
         print("No commits found.")
         return 0
+
+    proposed_hours = [
+        options.spent_hours if options.spent_hours is not None else estimate_spent_hours(options.estimated_hours or estimate_hours(commit))
+        for commit in commits
+    ]
+    drafts = [
+        draft_from_commit(commit, replace(options, spent_hours=spent, estimated_hours=spent + ESTIMATED_HOURS_BUFFER))
+        for commit, spent in zip(commits, ensure_minimum_spent_by_commit_day(commits, proposed_hours))
+    ]
 
     redmine = None
     if options.post:
@@ -244,8 +299,7 @@ def import_issues(options: ImportOptions) -> int:
         if options.status_id is None:
             options = ImportOptions(**{**options.__dict__, "status_id": redmine.closed_status_id()})
 
-    for commit in commits:
-        draft = draft_from_commit(commit, options)
+    for commit, draft in zip(commits, drafts):
         if not options.post:
             print(f"DRY RUN: {draft.subject} ({draft_summary(draft)})")
             continue
@@ -256,7 +310,7 @@ def import_issues(options: ImportOptions) -> int:
             print_created("skipped existing", existing_issue, draft)
             continue
 
-        issue = redmine.create_issue(options.project_id, draft, options.tracker_id)
+        issue = redmine.create_issue(options.project_id, draft, draft.tracker_id)
         if draft.spent_hours and options.activity_id:
             if draft.spent_hours < 0.5:
                 print(f"skipped time entry #{issue.get('id')}: hours below Redmine minimum 0.5")
